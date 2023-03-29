@@ -1,0 +1,298 @@
+module Client
+
+include "array"
+include "buffer"
+include "list"
+include "option"
+include "result"
+include "string"
+include "sys/process" as Ps
+include "sys/time"
+
+include "lunatic"
+from Lunatic use { Net, Process }
+
+include "./coordinator"
+include "./channel"
+include "./clientMessage"
+from ClientMessage use { clientMessageMailbox, type ClientMessage }
+include "./process" as ChatProcess
+include "./telnet"
+from Telnet use { type TelnetMessage }
+include "./termite"
+include "./termite/fmt"
+
+include "./ui/telnetBackend"
+from TelnetBackend use { WindowSize, type WindowSize }
+include "./ui/ui"
+from Ui use {
+  type ChannelContent,
+  Tab,
+  type TabType,
+  Ui,
+  type Ui,
+  UiTabs,
+  type UiTabs,
+}
+
+primitive magic = "@magic"
+
+record Client {
+  this: ChatProcess.ClientProcess,
+  coordinator: ChatProcess.CoordinatorProcess,
+  mut user: String,
+  uiTabs: UiTabs,
+  ui: Ui,
+  windowSize: WindowSize,
+}
+
+let _WELCOME = "
+    Welcome to
+
+     __     __     ______     ______     __    __        __     ______    
+    /\ \  _ \ \   /\  __ \   /\  ___\   /\ \"-./  \      /\ \   /\  __ \   
+    \ \ \/ \".\ \  \ \  __ \  \ \___  \  \ \ \-./\ \     \ \ \  \ \ \/\ \  
+     \ \__/\".~\_\  \ \_\ \_\  \/\_____\  \ \_\ \ \_\     \ \_\  \ \_____\ 
+      \/_/   \/_/   \/_/\/_/   \/_____/   \/_/  \/_/      \/_/   \/_____/         
+  
+  INSTRUCTIONS:
+
+  You will be navigating this interface using commands. Commands are
+  prefixed by a / character. Type /help for more information.
+
+  Your starting name is {{ username }}."
+
+let _INSTRUCTIONS = "LICENSE:
+
+  MIT, Repository: https://github.com/ospencer/lunatic-chat-gr
+  
+  PRIVACY:
+  
+  No data is stored on the server. Only the last 10 messages per channel
+  are kept in memory to bring new users up to date. Once the server shuts
+  off all information is gone.
+  
+  INSTRUCTIONS:
+
+  To switch between tabs use the <TAB> key.
+  
+  You can navigate through this server by using the following commands:
+  
+  * /nick <username> - Change your username
+  * /list            - Lists most popular #channels
+  * /join <#channel> - Join a channel; creates one if it doesn't exist
+  * /drop            - Drop out of a channel
+  * /help            - Display this instructions
+  * /exit            - Leave server"
+
+record Welcome {
+  username: String,
+  clients: Number,
+}
+
+let exit = () => {
+  Ps.exit(1)
+  void
+}
+
+let process = (client, command) => {
+  match (command) {
+    CtrlC | Error => {
+      exit()
+      void
+    },
+    Tab => {
+      UiTabs.next(client.uiTabs)
+      Ui.render(client.ui)
+      void
+    },
+    Backspace => {
+      UiTabs.inputDelChar(client.uiTabs)
+      Ui.render(client.ui)
+      void
+    },
+    Char(ch) => {
+      UiTabs.inputAddChar(client.uiTabs, ch)
+      Ui.render(client.ui)
+      void
+    },
+    Enter => {
+      let input = UiTabs.clear(client.uiTabs)
+      let input = String.trim(input)
+      if (String.startsWith("/", input)) {
+        // Command
+        let mut split = String.split(" ", input)
+        match (split[0]) {
+          "/help" => {
+            let tab = Tab.new("Help", None, Info(_INSTRUCTIONS))
+            UiTabs.addOrSwitch(client.uiTabs, tab)
+            Ui.render(client.ui)
+          },
+          "/nick" => {
+            match (split) {
+              [> _, nick] => {
+                client.user = Result.unwrap(
+                  Coordinator.changeName(client.coordinator, client.this, nick)
+                ).clientUsername
+              },
+              _ => void,
+            }
+            Ui.render(client.ui)
+          },
+          "/list" => {
+            let channels = Coordinator.listChannels(
+              client.coordinator,
+              client.this
+            )
+            let buffer = Buffer.make(512)
+            List.forEach(((name, online)) => {
+              Buffer.addString(name, buffer)
+              Buffer.addString(": ", buffer)
+              Buffer.addString(toString(online), buffer)
+              Buffer.addString(" users online\n", buffer)
+            }, Result.unwrap(channels))
+            let tab = Tab.new("Channels", None, Info(Buffer.toString(buffer)))
+            UiTabs.addOrSwitch(client.uiTabs, tab)
+            Ui.render(client.ui)
+          },
+          "/drop" => {
+            let currentChannel = Tab.getName(UiTabs.getSelected(client.uiTabs))
+            // If the tab is a channel notify coordinator that we are leaving.
+            if (String.startsWith("#", currentChannel)) {
+              Coordinator.leaveChannel(
+                client.coordinator,
+                client.this,
+                currentChannel
+              )
+              void
+            }
+            UiTabs.drop(client.uiTabs)
+            Ui.render(client.ui)
+          },
+          "/join" => {
+            let channelName = match (split) {
+              [> _, channelName] => channelName,
+              _ => return,
+            }
+            if (String.startsWith("#", channelName)) {
+              let channel = Result.unwrap(
+                Coordinator.joinChannel(
+                  client.coordinator,
+                  client.this,
+                  channelName
+                )
+              )
+              // Get last messages from channel
+              let lastMessages = Result.unwrap(
+                Channel.getLastMessages(channel, client.this)
+              )
+              // Create new tab bound to channel
+              let tab = Tab.new(
+                channelName,
+                Some(channel),
+                Channel({ channelContent: lastMessages, })
+              )
+              UiTabs.addOrSwitch(client.uiTabs, tab)
+            }
+            Ui.render(client.ui)
+          },
+          "/exit" => {
+            Coordinator.leaveServer(client.coordinator, client.this)
+            exit()
+          },
+          _ => void,
+        }
+      } else {
+        // Send to channel
+        if (input != "" && String.length(input) < 300) {
+          let tab = UiTabs.getSelected(client.uiTabs)
+          Tab.message(tab, client.user, input)
+          Ui.render(client.ui)
+        }
+      }
+    },
+    Naws(width, height) => {
+      client.windowSize.width = width
+      client.windowSize.height = height
+      Ui.render(client.ui)
+    },
+    _ => void,
+  }
+
+  return
+}
+
+provide let newClient = stream => {
+  let coordinator = Coordinator.getCoordinator()
+  let client = Coordinator.currentClient()
+  let info = match (Coordinator.joinServer(coordinator, client)) {
+    Ok(info) => info,
+    Err(_) => fail "Failed to join server",
+  }
+  print("[" ++ info.clientUsername ++ "] I've joined the server!")
+
+  let telnetProcess = Result.expect(
+    "failed to spawn subprocess",
+    Process.spawn(() => {
+      let stream = Result.expect(
+        "failed to get tcp stream",
+        Process.takeTcpStream()
+      )
+      let telnet = Telnet.make(magic(stream))
+      Result.expect("failed to set linemode", Telnet.iacDoLinemode(telnet))
+      Telnet.iacLinemodeZero(telnet)
+      Result.expect("failed to set echo", Telnet.iacWillEcho(telnet))
+      Result.expect("failed to set naws", Telnet.iacDoNaws(telnet))
+
+      while (true) {
+        match (Telnet.next(telnet)) {
+          Ok(message) => {
+            Result.expect(
+              "failed to transfer tcp process",
+              Process.send(client, Telnet(message), clientMessageMailbox)
+            )
+          },
+          Err(e) => fail toString(e),
+        }
+      }
+    })
+  )
+
+  Result.expect(
+    "failed to transfer stream",
+    Process.transferTcpStream(telnetProcess, Net.Tcp.clone(stream))
+  )
+
+  let windowSize = TelnetBackend.WindowSize.new()
+  let welcome = { username: info.clientUsername, clients: info.totalClients }
+  let content = String.replaceFirst(
+    "{{ username }}",
+    info.clientUsername,
+    _WELCOME
+  )
+  let tab = Tab.new("Welcome", None, Info(content))
+  let uiTabs = UiTabs.new(tab)
+  let ui = Ui.new(stream, windowSize, uiTabs)
+
+  let client = {
+    this: client,
+    coordinator,
+    user: info.clientUsername,
+    uiTabs,
+    ui,
+    windowSize,
+  }
+
+  while (true) {
+    match (Process.receive(clientMessageMailbox)) {
+      Ok(Telnet(message)) => process(client, message),
+      Ok(Client(channelName, name, message)) => {
+        UiTabs.addMessage(uiTabs, channelName, name, message)
+        Ui.render(ui)
+      },
+      Err(_) => fail "unable to recieve message",
+    }
+  }
+
+  void
+}

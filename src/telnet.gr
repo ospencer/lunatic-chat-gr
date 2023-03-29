@@ -1,0 +1,380 @@
+module Telnet
+
+include "bytes"
+include "result"
+include "uint16"
+
+include "lunatic"
+from Lunatic use { Net }
+
+abstract record Telnet {
+  stream: Net.Tcp.TcpStream,
+  mut start: Number,
+  mut end: Number,
+  buffer: Bytes,
+  mut naws: Bool,
+  mut linemode: Bool,
+  mut echo: Bool,
+}
+
+provide enum TelnetMessage {
+  IacWillLinemode,
+  IacWontLinemode,
+  IacDoEcho,
+  IacDontEcho,
+  IacWillNaws,
+  IacWontNaws,
+  IacOther,
+  Naws(Uint16, Uint16),
+  Char(Uint8),
+  Backspace,
+  Enter,
+  CtrlC,
+  Tab,
+  Esc,
+  Up,
+  Down,
+  Right,
+  Left,
+  Ignore,
+  Error,
+}
+
+let _IAC = 255us
+
+let _WILL = 251us
+let _WONT = 252us
+let _DO = 253us
+let _DONT = 254us
+
+let _SE = 240us
+let _SB = 250us
+
+let _ECHO = 1us
+let _LINEMODE = 34us
+let _NAWS = 31us
+
+provide let make = stream => {
+  {
+    stream,
+    start: 0,
+    end: 0,
+    buffer: Bytes.make(1024),
+    naws: false,
+    linemode: false,
+    echo: false,
+  }
+}
+
+// Get next message from client
+provide let next = telnet => {
+  from Net use { Tcp }
+  // If we reached the end of the buffer read more from tcp stream
+  if (telnet.start == telnet.end) {
+    match (Tcp.read(telnet.stream, telnet.buffer)) {
+      Ok(0) | Err(Tcp.TcpSocketClosed) => return Err("socket closed"),
+      Err(_) => return Err("tcp error"),
+      Ok(size) => {
+        telnet.start = 0
+        telnet.end = size
+      },
+    }
+  }
+
+  let result = match (Bytes.getUint8(telnet.start, telnet.buffer)) {
+    b when b == _IAC => {
+      telnet.start += 1
+      if (telnet.end - telnet.start < 2) {
+        return Err("invalid byte sequence")
+      }
+
+      match (Bytes.getUint8(telnet.start, telnet.buffer)) {
+        b when b == _WILL => {
+          telnet.start += 1
+          match (Bytes.getUint8(telnet.start, telnet.buffer)) {
+            b when b == _LINEMODE => {
+              telnet.start += 1
+              telnet.linemode = true
+              IacWillLinemode
+            },
+            b when b == _NAWS => {
+              telnet.start += 1
+              telnet.naws = true
+              IacWillNaws
+            },
+            _ => {
+              telnet.start += 1
+              IacOther
+            },
+          }
+        },
+        b when b == _WONT => {
+          telnet.start += 1
+          match (Bytes.getUint8(telnet.start, telnet.buffer)) {
+            b when b == _LINEMODE => {
+              telnet.start += 1
+              IacWontLinemode
+            },
+            b when b == _NAWS => {
+              telnet.start += 1
+              IacWontNaws
+            },
+            _ => {
+              telnet.start += 1
+              IacOther
+            },
+          }
+        },
+        b when b == _DO => {
+          telnet.start += 1
+          match (Bytes.getUint8(telnet.start, telnet.buffer)) {
+            b when b == _ECHO => {
+              telnet.start += 1
+              telnet.echo = true
+              IacDoEcho
+            },
+            _ => {
+              telnet.start += 1
+              IacOther
+            },
+          }
+        },
+        b when b == _DONT => {
+          telnet.start += 1
+          match (Bytes.getUint8(telnet.start, telnet.buffer)) {
+            b when b == _ECHO => {
+              telnet.start += 1
+              IacDontEcho
+            },
+            _ => {
+              telnet.start += 1
+              IacOther
+            },
+          }
+        },
+        b when b == _SB => {
+          telnet.start += 1
+          match (Bytes.getUint8(telnet.start, telnet.buffer)) {
+            b when b == _NAWS => {
+              telnet.start += 1
+              // find number of bytes in sequence
+              let mut count = 0
+              while (
+                Bytes.getUint8(telnet.start + count, telnet.buffer) != _IAC &&
+                Bytes.getUint8(telnet.start + count + 1, telnet.buffer) != _SE
+              ) {
+                count += 1
+              }
+
+              let (width, height) = if (count == 4) {
+                // There are no double 255s.
+                let width = Bytes.getUint16(telnet.start, telnet.buffer)
+                let height = Bytes.getUint16(telnet.start + 2, telnet.buffer)
+
+                // These two values are BE but wasm is LE
+                from Uint16 use { (<<), (>>>), (|) }
+                let width = width >>> 8uS | width << 8uS
+                let height = height >>> 8uS | height << 8uS
+
+                (width, height)
+              } else {
+                // First deduplicate 255 values
+                let bytes = Bytes.make(count)
+                let mut newCount = 0
+
+                for (let mut i = 0; i < count; i += 1) {
+                  if (
+                    Bytes.getUint8(telnet.start + i, telnet.buffer) == 255us &&
+                    Bytes.getUint8(telnet.start + i + 1, telnet.buffer) == 255us
+                  ) {
+                    continue
+                  }
+
+                  Bytes.setUint8(
+                    newCount,
+                    Bytes.getUint8(telnet.start + i, telnet.buffer),
+                    bytes
+                  )
+                  newCount += 1
+                }
+
+                let width = Bytes.getUint16(0, bytes)
+                let height = Bytes.getUint16(2, bytes)
+
+                // These two values are BE but wasm is LE
+                from Uint16 use { (<<), (>>>), (|) }
+                let width = width >>> 8uS | width << 8uS
+                let height = height >>> 8uS | height << 8uS
+
+                (width, height)
+              }
+              telnet.start += count + 2
+              Naws(width, height)
+            },
+            _ => {
+              // ignore other multibyte patterns
+              telnet.start += 1
+              while (
+                Bytes.getUint8(telnet.start, telnet.buffer) != _IAC &&
+                Bytes.getUint8(telnet.start + 1, telnet.buffer) != _SE
+              ) {
+                telnet.start += 1
+              }
+              telnet.start += 2
+              IacOther
+            },
+          }
+        },
+        char => {
+          Char(char)
+        },
+      }
+    },
+    0x1bus => {
+      telnet.start += 1
+      let byte = Bytes.getUint8(telnet.start, telnet.buffer)
+      if (byte == 0x5bus) {
+        // character escape
+        telnet.start += 1
+        let esc = match (Bytes.getUint8(telnet.start, telnet.buffer)) {
+          65us => Up,
+          66us => Down,
+          67us => Right,
+          68us => Left,
+          _ => Ignore,
+        }
+        telnet.start += 1
+        esc
+      } else {
+        Char(0x1bus)
+      }
+    },
+    13us => {
+      telnet.start += 1
+      let byte = Bytes.getUint8(telnet.start, telnet.buffer)
+      if (byte == 0us) {
+        // enter
+        telnet.start += 1
+        Enter
+      } else {
+        Char(13us)
+      }
+    },
+    char => {
+      telnet.start += 1
+      match (char) {
+        3us => CtrlC,
+        127us => Backspace,
+        9us => Tab,
+        27us => Esc,
+        _ => Char(char),
+      }
+    },
+  }
+
+  return Ok(result)
+}
+
+provide let iacDoLinemode = telnet => {
+  from Net use { Tcp }
+
+  let buffer = Bytes.make(3)
+  Bytes.setUint8(0, _IAC, buffer)
+  Bytes.setUint8(1, _DO, buffer)
+  Bytes.setUint8(2, _LINEMODE, buffer)
+
+  Result.expect(
+    "failed to write to tcp stream",
+    Tcp.write(telnet.stream, buffer)
+  )
+
+  while (!telnet.linemode) {
+    match (next(telnet)) {
+      Ok(IacWontLinemode) => {
+        return Err("Linemode not supported")
+      },
+      _ => {
+        continue
+      },
+    }
+  }
+
+  return Ok(void)
+}
+
+// Tell the client not to do local editing
+provide let iacLinemodeZero = telnet => {
+  from Net use { Tcp }
+
+  let buffer = Bytes.make(7)
+  Bytes.setUint8(0, _IAC, buffer)
+  Bytes.setUint8(1, _SB, buffer)
+  Bytes.setUint8(2, _LINEMODE, buffer)
+  Bytes.setUint8(3, 1us, buffer)
+  Bytes.setUint8(4, 0us, buffer)
+  Bytes.setUint8(5, _IAC, buffer)
+  Bytes.setUint8(6, _SE, buffer)
+
+  Result.expect(
+    "failed to write to tcp stream",
+    Tcp.write(telnet.stream, buffer)
+  )
+
+  void
+}
+
+// Tell the client to report window size changes
+provide let iacDoNaws = telnet => {
+  from Net use { Tcp }
+
+  let buffer = Bytes.make(3)
+  Bytes.setUint8(0, _IAC, buffer)
+  Bytes.setUint8(1, _DO, buffer)
+  Bytes.setUint8(2, _NAWS, buffer)
+
+  Result.expect(
+    "failed to write to tcp stream",
+    Tcp.write(telnet.stream, buffer)
+  )
+
+  while (!telnet.naws) {
+    match (next(telnet)) {
+      Ok(IacWontNaws) => {
+        return Err("NAWS not supported")
+      },
+      _ => {
+        continue
+      },
+    }
+  }
+
+  return Ok(void)
+}
+
+// Tell the client that we will be doing the echoing
+provide let iacWillEcho = telnet => {
+  from Net use { Tcp }
+
+  let buffer = Bytes.make(3)
+  Bytes.setUint8(0, _IAC, buffer)
+  Bytes.setUint8(1, _WILL, buffer)
+  Bytes.setUint8(2, _ECHO, buffer)
+
+  Result.expect(
+    "failed to write to tcp stream",
+    Tcp.write(telnet.stream, buffer)
+  )
+
+  while (!telnet.echo) {
+    match (next(telnet)) {
+      Ok(IacDontEcho) => {
+        return Err("Echo not supported")
+      },
+      _ => {
+        continue
+      },
+    }
+  }
+
+  return Ok(void)
+}

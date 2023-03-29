@@ -1,0 +1,60 @@
+module Color
+
+include "./fmt"
+
+let createSequence = seq => {
+  let seq = "\x1B[" ++ seq
+  fmt => {
+    Fmt.write(fmt, seq)
+  }
+}
+
+let createFgSequence = seq => {
+  let seq = "\x1B[38;5;" ++ seq ++ "m"
+  fmt => {
+    Fmt.write(fmt, seq)
+  }
+}
+
+let createBgSequence = seq => {
+  let seq = "\x1B[48;5;" ++ seq ++ "m"
+  fmt => {
+    Fmt.write(fmt, seq)
+  }
+}
+
+provide let fgReset = createSequence("39m")
+provide let fgBlack = createFgSequence("0")
+provide let fgRed = createFgSequence("1")
+provide let fgGreen = createFgSequence("2")
+provide let fgYellow = createFgSequence("3")
+provide let fgBlue = createFgSequence("4")
+provide let fgMagenta = createFgSequence("5")
+provide let fgCyan = createFgSequence("6")
+provide let fgWhite = createFgSequence("7")
+provide let fgLightBlack = createFgSequence("8")
+provide let fgLightRed = createFgSequence("9")
+provide let fgLightGreen = createFgSequence("10")
+provide let fgLightYellow = createFgSequence("11")
+provide let fgLightBlue = createFgSequence("12")
+provide let fgLightMagenta = createFgSequence("13")
+provide let fgLightCyan = createFgSequence("14")
+provide let fgLightWhite = createFgSequence("15")
+
+provide let bgReset = createSequence("49m")
+provide let bgBlack = createBgSequence("0")
+provide let bgRed = createBgSequence("1")
+provide let bgGreen = createBgSequence("2")
+provide let bgYellow = createBgSequence("3")
+provide let bgBlue = createBgSequence("4")
+provide let bgMagenta = createBgSequence("5")
+provide let bgCyan = createBgSequence("6")
+provide let bgWhite = createBgSequence("7")
+provide let bgLightBlack = createBgSequence("8")
+provide let bgLightRed = createBgSequence("9")
+provide let bgLightGreen = createBgSequence("10")
+provide let bgLightYellow = createBgSequence("11")
+provide let bgLightBlue = createBgSequence("12")
+provide let bgLightMagenta = createBgSequence("13")
+provide let bgLightCyan = createBgSequence("14")
+provide let bgLightWhite = createBgSequence("15")

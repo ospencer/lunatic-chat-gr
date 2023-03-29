@@ -1,0 +1,250 @@
+module Coordinator
+
+include "set"
+include "list"
+include "map"
+include "option"
+include "result"
+
+include "lunatic"
+from Lunatic use { Process }
+
+include "./process" as ChatProcess
+include "./channel"
+from ChatProcess use {
+  type ChannelProcess,
+  type ClientProcess,
+  type CoordinatorProcess,
+}
+
+provide record Info {
+  clientUsername: String,
+  totalClients: Number,
+}
+
+record Client {
+  mut username: String,
+  channels: Set.Set<ChannelProcess>,
+}
+
+record Channel {
+  channelProcess: ChannelProcess,
+  mut channelSize: Number,
+}
+
+enum MessageType {
+  JoinServer,
+  LeaveServer,
+  ChangeName(String),
+  ListChannels,
+  JoinChannel(String),
+  LeaveChannel(String),
+}
+
+type Message = (MessageType, ClientProcess)
+
+let (|>) = (result, f) => Result.flatMap(f, result)
+
+let _COORDINATOR_PROCESS = "coordinator"
+
+let mut nextId = 0
+let clients: Map.Map<ClientProcess, Client> = Map.make()
+let channels: Map.Map<String, Channel> = Map.make()
+
+let joinServer = clientProcess => {
+  nextId += 1
+
+  let clientUsername = "user_" ++ toString(nextId)
+
+  Map.set(
+    clientProcess,
+    { username: clientUsername, channels: Set.make() },
+    clients
+  )
+
+  { clientUsername, totalClients: Map.size(clients) }
+}
+
+let leaveServer = clientProcess => {
+  match (Map.get(clientProcess, clients)) {
+    Some(client) => {
+      Set.forEach(channel => {
+        Channel.leave(channel, clientProcess)
+      }, client.channels)
+    },
+    None => void,
+  }
+
+  Map.remove(clientProcess, clients)
+}
+
+let changeName = (clientProcess, newName) => {
+  // Check if username is taken
+  match (List.find(client => client.username == newName, Map.values(clients))) {
+    Some(_) => {
+      let client = Option.unwrap(Map.get(clientProcess, clients))
+      { clientUsername: client.username, totalClients: Map.size(clients) }
+    },
+    None => {
+      let client = Option.unwrap(Map.get(clientProcess, clients))
+      client.username = newName
+      { clientUsername: client.username, totalClients: Map.size(clients) }
+    },
+  }
+}
+
+let listChannels = () => {
+  Map.reduce((acc, channelName, { channelSize, _ }) => {
+    [(channelName, channelSize), ...acc]
+  }, [], channels)
+}
+
+let leaveChannel = (clientProcess, channel) => {
+  let left = match (Map.get(channel, channels)) {
+    Some(exists) => {
+      Channel.leave(exists.channelProcess, clientProcess)
+      exists.channelSize -= 1
+      exists.channelSize
+    },
+    None => {
+      -1
+    },
+  }
+  // If this was the last client, shut down the channel and remove it.
+  if (left == 0) {
+    let channelProcess = Option.unwrap(
+      Map.get(channel, channels)
+    ).channelProcess
+    Channel.shutdown(channelProcess)
+    Map.remove(channel, channels)
+  }
+}
+
+let joinChannel = (client: ClientProcess, channel: String) => {
+  match (Map.get(channel, channels)) {
+    Some(exists) => {
+      // Channel already exists
+      exists.channelSize += 1
+      Channel.join(exists.channelProcess, client)
+      exists.channelProcess
+    },
+    None => {
+      // Start a new channel process
+      let channelProcess = Result.unwrap(Process.spawn(Channel.newChannel))
+      Map.set(channel, { channelProcess, channelSize: 1 }, channels)
+      Channel.join(channelProcess, client)
+      channelProcess
+    },
+  }
+}
+
+let coordinatorInbox: Process.Mailbox<Message> = Process.createMailbox()
+let infoInbox: Process.Mailbox<Info> = Process.createMailbox()
+let channelInbox: Process.Mailbox<ChannelProcess> = Process.createMailbox()
+let channelsInbox: Process.Mailbox<List<(String, Number)>
+> = Process.createMailbox()
+
+provide let coordinate = () => {
+  Process.dieWhenLinkDies(false)
+  Process.register(_COORDINATOR_PROCESS, Process.this())
+
+  while (true) {
+    let message = Result.unwrap(Process.receive(coordinatorInbox))
+    match (message) {
+      (JoinServer, client) => {
+        let info = joinServer(client)
+        Process.send(client, info, infoInbox)
+        void
+      },
+      (LeaveServer, client) => {
+        leaveServer(client)
+      },
+      (ChangeName(newName), client) => {
+        let info = changeName(client, newName)
+        Process.send(client, info, infoInbox)
+        void
+      },
+      (ListChannels, client) => {
+        Process.send(client, listChannels(), channelsInbox)
+        void
+      },
+      (JoinChannel(name), client) => {
+        Process.send(client, joinChannel(client, name), channelInbox)
+        void
+      },
+      (LeaveChannel(name), client) => {
+        leaveChannel(client, name)
+        void
+      },
+    }
+  }
+}
+
+// These functions are all to be called by client processes
+
+provide let getCoordinator = () => {
+  match (Process.lookup(_COORDINATOR_PROCESS)) {
+    Some(coordinator) => coordinator: CoordinatorProcess,
+    None => fail "No live coordinator",
+  }
+}
+
+provide let currentClient = () => {
+  Lunatic.Process.takeTcpStream
+  Process.this(): ClientProcess
+}
+
+provide let joinServer = (coordinator: CoordinatorProcess, clientProcess) => {
+  Process.send(coordinator, (JoinServer, clientProcess), coordinatorInbox) |>
+    (_) => Process.receive(infoInbox)
+}
+
+provide let leaveServer = (coordinator: CoordinatorProcess, clientProcess) => {
+  Process.send(coordinator, (LeaveServer, clientProcess), coordinatorInbox)
+}
+
+provide let changeName =
+  (
+    coordinator: CoordinatorProcess,
+    clientProcess,
+    name,
+  ) => {
+  Process.send(
+    coordinator,
+    (ChangeName(name), clientProcess),
+    coordinatorInbox
+  ) |>
+    (_) => Process.receive(infoInbox)
+}
+
+provide let listChannels = (coordinator: CoordinatorProcess, clientProcess) => {
+  Process.send(coordinator, (ListChannels, clientProcess), coordinatorInbox) |>
+    (_) => Process.receive(channelsInbox)
+}
+
+provide let joinChannel =
+  (
+    coordinator: CoordinatorProcess,
+    clientProcess,
+    channel,
+  ) => {
+  Process.send(
+    coordinator,
+    (JoinChannel(channel), clientProcess),
+    coordinatorInbox
+  ) |>
+    (_) => Process.receive(channelInbox)
+}
+
+provide let leaveChannel =
+  (
+    coordinator: CoordinatorProcess,
+    clientProcess,
+    channel,
+  ) => {
+  Process.send(
+    coordinator,
+    (LeaveChannel(channel), clientProcess),
+    coordinatorInbox
+  )
+}

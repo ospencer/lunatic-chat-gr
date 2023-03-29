@@ -1,0 +1,13 @@
+module Fmt
+
+abstract record Formatter {
+  write: String -> Void,
+}
+
+provide let make = writer => {
+  { write: writer, }
+}
+
+provide let write = (formatter, str) => {
+  formatter.write(str)
+}

@@ -1,0 +1,27 @@
+module Style
+
+include "./fmt"
+
+let createSequence = seq => {
+  let seq = "\x1B[" ++ seq
+  fmt => {
+    Fmt.write(fmt, seq)
+  }
+}
+
+provide let reset = createSequence("m")
+provide let bold = createSequence("1m")
+provide let faint = createSequence("2m")
+provide let italic = createSequence("3m")
+provide let underline = createSequence("4m")
+provide let blink = createSequence("5m")
+provide let invert = createSequence("7m")
+provide let crossedOut = createSequence("9m")
+provide let noBold = createSequence("21m")
+provide let noFaint = createSequence("22m")
+provide let noItalic = createSequence("23m")
+provide let noUnderline = createSequence("24m")
+provide let noBlink = createSequence("25m")
+provide let noInvert = createSequence("27m")
+provide let noCrossedOut = createSequence("29m")
+provide let framed = createSequence("51m")

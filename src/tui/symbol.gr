@@ -1,0 +1,231 @@
+module Symbol
+
+provide module Block {
+  provide let _FULL = '█'
+  provide let _SEVEN_EIGHTHS = '▉'
+  provide let _THREE_QUARTERS = '▊'
+  provide let _FIVE_EIGHTHS = '▋'
+  provide let _HALF = '▌'
+  provide let _THREE_EIGHTHS = '▍'
+  provide let _ONE_QUARTER = '▎'
+  provide let _ONE_EIGHTH = '▏'
+
+  provide record Set {
+    full: Char,
+    sevenEighths: Char,
+    threeQuarters: Char,
+    fiveEighths: Char,
+    half: Char,
+    threeEighths: Char,
+    oneQuarter: Char,
+    oneEighth: Char,
+    empty: Char,
+  }
+
+  provide let _THREE_LEVELS: Set = {
+    full: _FULL,
+    sevenEighths: _FULL,
+    threeQuarters: _HALF,
+    fiveEighths: _HALF,
+    half: _HALF,
+    threeEighths: _HALF,
+    oneQuarter: _HALF,
+    oneEighth: ' ',
+    empty: ' ',
+  }
+
+  provide let _NINE_LEVELS: Set = {
+    full: _FULL,
+    sevenEighths: _SEVEN_EIGHTHS,
+    threeQuarters: _THREE_QUARTERS,
+    fiveEighths: _FIVE_EIGHTHS,
+    half: _HALF,
+    threeEighths: _THREE_EIGHTHS,
+    oneQuarter: _ONE_QUARTER,
+    oneEighth: _ONE_EIGHTH,
+    empty: ' ',
+  }
+}
+
+provide module Bar {
+  provide let _FULL = '█'
+  provide let _SEVEN_EIGHTHS = '▇'
+  provide let _THREE_QUARTERS = '▆'
+  provide let _FIVE_EIGHTHS = '▅'
+  provide let _HALF = '▄'
+  provide let _THREE_EIGHTHS = '▃'
+  provide let _ONE_QUARTER = '▂'
+  provide let _ONE_EIGHTH = '▁'
+
+  provide record Set {
+    full: Char,
+    sevenEighths: Char,
+    threeQuarters: Char,
+    fiveEighths: Char,
+    half: Char,
+    threeEighths: Char,
+    oneQuarter: Char,
+    oneEighth: Char,
+    empty: Char,
+  }
+
+  provide let _THREE_LEVELS: Set = {
+    full: _FULL,
+    sevenEighths: _FULL,
+    threeQuarters: _HALF,
+    fiveEighths: _HALF,
+    half: _HALF,
+    threeEighths: _HALF,
+    oneQuarter: _HALF,
+    oneEighth: ' ',
+    empty: ' ',
+  }
+
+  provide let _NINE_LEVELS: Set = {
+    full: _FULL,
+    sevenEighths: _SEVEN_EIGHTHS,
+    threeQuarters: _THREE_QUARTERS,
+    fiveEighths: _FIVE_EIGHTHS,
+    half: _HALF,
+    threeEighths: _THREE_EIGHTHS,
+    oneQuarter: _ONE_QUARTER,
+    oneEighth: _ONE_EIGHTH,
+    empty: ' ',
+  }
+}
+
+provide module Line {
+  provide let _VERTICAL = '│'
+  provide let _DOUBLE_VERTICAL = '║'
+  provide let _THICK_VERTICAL = '┃'
+
+  provide let _HORIZONTAL = '─'
+  provide let _DOUBLE_HORIZONTAL = '═'
+  provide let _THICK_HORIZONTAL = '━'
+
+  provide let _TOP_RIGHT = '┐'
+  provide let _ROUNDED_TOP_RIGHT = '╮'
+  provide let _DOUBLE_TOP_RIGHT = '╗'
+  provide let _THICK_TOP_RIGHT = '┓'
+
+  provide let _TOP_LEFT = '┌'
+  provide let _ROUNDED_TOP_LEFT = '╭'
+  provide let _DOUBLE_TOP_LEFT = '╔'
+  provide let _THICK_TOP_LEFT = '┏'
+
+  provide let _BOTTOM_RIGHT = '┘'
+  provide let _ROUNDED_BOTTOM_RIGHT = '╯'
+  provide let _DOUBLE_BOTTOM_RIGHT = '╝'
+  provide let _THICK_BOTTOM_RIGHT = '┛'
+
+  provide let _BOTTOM_LEFT = '└'
+  provide let _ROUNDED_BOTTOM_LEFT = '╰'
+  provide let _DOUBLE_BOTTOM_LEFT = '╚'
+  provide let _THICK_BOTTOM_LEFT = '┗'
+
+  provide let _VERTICAL_LEFT = '┤'
+  provide let _DOUBLE_VERTICAL_LEFT = '╣'
+  provide let _THICK_VERTICAL_LEFT = '┫'
+
+  provide let _VERTICAL_RIGHT = '├'
+  provide let _DOUBLE_VERTICAL_RIGHT = '╠'
+  provide let _THICK_VERTICAL_RIGHT = '┣'
+
+  provide let _HORIZONTAL_DOWN = '┬'
+  provide let _DOUBLE_HORIZONTAL_DOWN = '╦'
+  provide let _THICK_HORIZONTAL_DOWN = '┳'
+
+  provide let _HORIZONTAL_UP = '┴'
+  provide let _DOUBLE_HORIZONTAL_UP = '╩'
+  provide let _THICK_HORIZONTAL_UP = '┻'
+
+  provide let _CROSS = '┼'
+  provide let _DOUBLE_CROSS = '╬'
+  provide let _THICK_CROSS = '╋'
+
+  provide record Set {
+    vertical: Char,
+    horizontal: Char,
+    topRight: Char,
+    topLeft: Char,
+    bottomRight: Char,
+    bottomLeft: Char,
+    verticalLeft: Char,
+    verticalRight: Char,
+    horizontalDown: Char,
+    horizontalUp: Char,
+    cross: Char,
+  }
+
+  provide let _NORMAL: Set = {
+    vertical: _VERTICAL,
+    horizontal: _HORIZONTAL,
+    topRight: _TOP_RIGHT,
+    topLeft: _TOP_LEFT,
+    bottomRight: _BOTTOM_RIGHT,
+    bottomLeft: _BOTTOM_LEFT,
+    verticalLeft: _VERTICAL_LEFT,
+    verticalRight: _VERTICAL_RIGHT,
+    horizontalDown: _HORIZONTAL_DOWN,
+    horizontalUp: _HORIZONTAL_UP,
+    cross: _CROSS,
+  }
+
+  provide let _ROUNDED: Set = {
+    ..._NORMAL,
+    topRight: _ROUNDED_TOP_RIGHT,
+    topLeft: _ROUNDED_TOP_LEFT,
+    bottomRight: _ROUNDED_BOTTOM_RIGHT,
+    bottomLeft: _ROUNDED_BOTTOM_LEFT,
+  }
+
+  provide let _DOUBLE: Set = {
+    vertical: _DOUBLE_VERTICAL,
+    horizontal: _DOUBLE_HORIZONTAL,
+    topRight: _DOUBLE_TOP_RIGHT,
+    topLeft: _DOUBLE_TOP_LEFT,
+    bottomRight: _DOUBLE_BOTTOM_RIGHT,
+    bottomLeft: _DOUBLE_BOTTOM_LEFT,
+    verticalLeft: _DOUBLE_VERTICAL_LEFT,
+    verticalRight: _DOUBLE_VERTICAL_RIGHT,
+    horizontalDown: _DOUBLE_HORIZONTAL_DOWN,
+    horizontalUp: _DOUBLE_HORIZONTAL_UP,
+    cross: _DOUBLE_CROSS,
+  }
+
+  provide let _THICK: Set = {
+    vertical: _THICK_VERTICAL,
+    horizontal: _THICK_HORIZONTAL,
+    topRight: _THICK_TOP_RIGHT,
+    topLeft: _THICK_TOP_LEFT,
+    bottomRight: _THICK_BOTTOM_RIGHT,
+    bottomLeft: _THICK_BOTTOM_LEFT,
+    verticalLeft: _THICK_VERTICAL_LEFT,
+    verticalRight: _THICK_VERTICAL_RIGHT,
+    horizontalDown: _THICK_HORIZONTAL_DOWN,
+    horizontalUp: _THICK_HORIZONTAL_UP,
+    cross: _THICK_CROSS,
+  }
+}
+
+provide let _DOT = '•'
+
+provide module Braille {
+  provide let _BLANK = 0x2800uS
+  provide let _DOTS = [>
+    [> 0x0001, 0x0008],
+    [> 0x0002, 0x0010],
+    [> 0x0004, 0x0020],
+    [> 0x0040, 0x0080],
+  ]
+}
+
+/// Marker to use when plotting data points
+provide enum Marker {
+  /// One point per cell in shape of dot
+  Dot,
+  /// One point per cell in shape of a block
+  Block,
+  /// Up to 8 points per cell
+  Braille,
+}

@@ -1,0 +1,377 @@
+module Ui
+
+include "buffer"
+include "char"
+include "int16"
+include "option"
+include "list"
+include "result"
+include "string"
+include "uint16"
+
+include "lunatic"
+from Lunatic.Net.Tcp use { type TcpStream }
+
+include "../channel"
+include "../process" as ChatProcess
+from ChatProcess use { type ChannelProcess }
+
+include "../tui/layout"
+from Layout use { type Constraint, type Rect }
+include "../tui/style"
+from Style use { type Color, Modifier }
+include "../tui/symbol"
+include "../tui/terminal"
+from Terminal use { Frame, type Frame, Terminal, type Terminal }
+include "../tui/text"
+include "../tui/widgets"
+from Widgets use { Block, Borders, Paragraph }
+from Widgets.Tabs use { renderer as tabsRenderer, Tabs }
+from Borders use { type Borders }
+
+include "./telnetBackend"
+from TelnetBackend use { type WindowSize }
+
+primitive magic = "@magic"
+
+provide record ChannelContent {
+  mut channelContent: List<(String, String)>,
+}
+provide enum TabType {
+  Info(String),
+  Channel(ChannelContent),
+}
+
+abstract record Tab {
+  name: String,
+  tabType: TabType,
+  notifier: Option<ChannelProcess>,
+  input: Buffer.Buffer,
+}
+
+provide module Tab {
+  provide let new =
+    (
+      name: String,
+      notifier: Option<ChannelProcess>,
+      tabType: TabType,
+    ) => {
+    { name, tabType, notifier, input: Buffer.make(512) }
+  }
+
+  provide let getType = tab => {
+    tab.tabType
+  }
+
+  provide let getName = tab => {
+    tab.name
+  }
+
+  provide let getInput = tab => {
+    Buffer.toString(tab.input)
+  }
+
+  provide let clear = tab => {
+    let input = getInput(tab)
+    Buffer.clear(tab.input)
+    input
+  }
+
+  provide let inputDelChar = tab => {
+    let length = Buffer.length(tab.input)
+    if (length > 0) Buffer.truncate(length - 1, tab.input)
+  }
+
+  provide let inputAddChar = (tab, ch) => {
+    Buffer.addUint8(ch, tab.input)
+  }
+
+  provide let message = (tab, user: String, message: String) => {
+    match (tab.notifier) {
+      Some(channel) => {
+        Channel.sendMessage(channel, tab.name, user, message)
+      },
+      None => void,
+    }
+  }
+}
+
+provide record UiTabs {
+  mut tabs: List<Tab>,
+  mut selected: Number,
+}
+
+provide module UiTabs {
+  provide let new = (tab: Tab) => {
+    { tabs: [tab], selected: 0 }
+  }
+
+  provide let widget = uiTabs => {
+    let tabs = List.map(tab => Text.rawSpans(Tab.getName(tab)), uiTabs.tabs)
+    let tabs = Tabs.new(tabs)
+    Tabs.style(tabs, Style.fg(Style.defaultStyle(), White))
+    Tabs.highlightStyle(
+      tabs,
+      Style.addModifier(
+        Style.fg(Style.defaultStyle(), LightCyan),
+        Style.Modifier._UNDERLINED
+      )
+    )
+    Tabs.divider(tabs, Text.rawSpan(Char.toString(Symbol._DOT)))
+    Tabs.select(tabs, uiTabs.selected)
+  }
+
+  provide let names = tabs => {
+    List.map(tab => tab.name, tabs.tabs)
+  }
+
+  provide let add = (tabs, tab: Tab) => {
+    tabs.tabs = List.append(tabs.tabs, [tab])
+    tabs.selected = List.length(tabs.tabs) - 1
+  }
+
+  provide let switch = (tabs, name) => {
+    match (List.findIndex(n => name == n, names(tabs))) {
+      Some(index) => tabs.selected = index,
+      None => void,
+    }
+  }
+
+  provide let addOrSwitch = (tabs, tab: Tab) => {
+    if (List.contains(tab.name, names(tabs))) {
+      switch(tabs, tab.name)
+    } else {
+      add(tabs, tab)
+    }
+  }
+
+  provide let drop = tabs => {
+    // Don't drop the last tab
+    if (List.length(tabs.tabs) == 1) {
+      return
+    }
+    let index = tabs.selected
+    tabs.tabs = List.filteri((_, i) => i != index, tabs.tabs)
+    if (index != 0) {
+      tabs.selected -= 1
+    }
+
+    return
+  }
+
+  provide let addMessage =
+    (
+      tabs,
+      channel: String,
+      user: String,
+      message: String,
+    ) => {
+    let tab = Option.unwrap(List.find(tab => tab.name == channel, tabs.tabs))
+    match (tab.tabType) {
+      Channel(content) => {
+        content.channelContent = List.append(
+          content.channelContent,
+          [(user, message)]
+        )
+        if (List.length(content.channelContent) > 100) {
+          content.channelContent = List.drop(50, content.channelContent)
+        }
+      },
+      _ => fail "unimplemented",
+    }
+  }
+
+  provide let next = tabs => {
+    tabs.selected = (tabs.selected + 1) % List.length(tabs.tabs)
+  }
+
+  provide let getSelected = tabs => {
+    Option.unwrap(List.nth(tabs.selected, tabs.tabs))
+  }
+
+  provide let inputDelChar = tabs => {
+    Tab.inputDelChar(getSelected(tabs))
+  }
+
+  provide let inputAddChar = (tabs, ch) => {
+    Tab.inputAddChar(getSelected(tabs), ch)
+  }
+
+  provide let clear = tabs => {
+    Tab.clear(getSelected(tabs))
+  }
+}
+
+abstract record Ui {
+  terminal: Terminal,
+  terminalTabs: UiTabs,
+}
+
+provide module Ui {
+  provide let new =
+    (
+      tcpStream: TcpStream,
+      windowSize: WindowSize,
+      terminalTabs: UiTabs,
+    ) => {
+    let backend = TelnetBackend.new(tcpStream, windowSize)
+    let terminal = Result.unwrap(Terminal.new(backend))
+    { terminal, terminalTabs }
+  }
+
+  let renderSizeWarning = frame => {
+    let layout = Layout.default()
+    Layout.direction(layout, Vertical)
+    Layout.constraints(layout, [Percentage(50uS), Percentage(50uS)])
+    let sections = Layout.split(layout, Frame.size(frame))
+    let warning = Paragraph.new(
+      Text.rawText("Please resize your terminal window to at least: 80x24")
+    )
+    Paragraph.alignment(warning, Center)
+    Paragraph.wrap(warning, { trim: true, })
+    Frame.renderWidget(
+      frame,
+      Paragraph.renderer(warning),
+      Option.unwrap(List.nth(1, sections))
+    )
+  }
+
+  let renderInfo = (frame, content: String, area: Rect) => {
+    let welcome = Paragraph.new(Text.rawText(content))
+    Paragraph.block(
+      welcome,
+      magic(Block.borders(Block.default(), magic(Borders._ALL)))
+    )
+    Paragraph.wrap(welcome, { trim: false, })
+    Frame.renderWidget(frame, Paragraph.renderer(welcome), area)
+  }
+
+  let renderChannel = (frame, content: List<(String, String)>, area: Rect) => {
+    from Int16 use { (+), (-), (/), (<) }
+
+    // +2 to calculate borders
+    let mut verticalSpaceUsed = 2S
+    let lines = List.reduce((lines, (name, message)) => {
+      let spans = [
+        Text.styledSpan(
+          name,
+          Style.addModifier(
+            Style.fg(Style.defaultStyle(), LightBlue),
+            Modifier._BOLD
+          )
+        ),
+        Text.styledSpan(
+          ": ",
+          Style.addModifier(Style.defaultStyle(), Modifier._BOLD)
+        ),
+        Text.styledSpan(message, Style.defaultStyle()),
+      ]
+      let width = Text.spansWidth(spans)
+
+      verticalSpaceUsed += Int16.fromNumber(width) /
+        (Int16.fromUint16(area.width) - 3S) +
+        1S
+      [spans, ...lines]
+    }, [], content)
+    let lines = List.reverse(lines)
+
+    // Calculate scroll
+    // 1 line as buffer
+    let scroll = verticalSpaceUsed - Int16.fromUint16(area.height) + 1S
+    let scroll = if (scroll < 0S) {
+      0S
+    } else {
+      scroll
+    }
+
+    let chat = Paragraph.new(lines)
+    Paragraph.block(
+      chat,
+      magic(Block.borders(Block.default(), magic(Borders._ALL)))
+    )
+    Paragraph.scroll(chat, (Uint16.fromInt16(scroll), 0uS))
+    Paragraph.wrap(chat, { trim: true, })
+    Frame.renderWidget(frame, Paragraph.renderer(chat), area)
+  }
+
+  let renderInput = (frame, content: String, area: Rect) => {
+    let arrowStyle = Style.addModifier(Style.defaultStyle(), Modifier._ITALIC)
+    let arrow = Text.styledSpan("> ", arrowStyle)
+
+    let content = Text.rawSpan(content)
+
+    let cursorStyle = Style.addModifier(
+      Style.defaultStyle(),
+      Modifier._RAPID_BLINK
+    )
+    let cursor = Text.styledSpan(Char.toString(Symbol.Bar._FULL), cursorStyle)
+
+    let input = [arrow, content, cursor]
+    let welcome = Paragraph.new([input])
+    Paragraph.block(
+      welcome,
+      magic(Block.borders(Block.default(), magic(Borders._ALL)))
+    )
+    Paragraph.wrap(welcome, { trim: true, })
+    Frame.renderWidget(frame, Paragraph.renderer(welcome), area)
+  }
+
+  provide let render = (ui: Ui) => {
+    from Uint16 use { (<) }
+
+    let tabs = UiTabs.widget(ui.terminalTabs)
+    let selectedTab = UiTabs.getSelected(ui.terminalTabs)
+    let _ = Terminal.draw(ui.terminal, f => {
+      let size = Frame.size(f)
+      if (size.width < 80uS || size.height < 24uS) {
+        return renderSizeWarning(f)
+      }
+
+      let layout = Layout.default()
+      Layout.direction(layout, Vertical)
+      Layout.margin(layout, 1uS)
+      Layout.constraints(
+        layout,
+        [Percentage(5uS), Percentage(85uS), Percentage(10uS)]
+      )
+      let sections = Layout.split(layout, size)
+
+      // Render tabs
+      Frame.renderWidget(
+        f,
+        tabsRenderer(tabs),
+        Option.unwrap(List.nth(0, sections))
+      )
+
+      // Render selected tab content
+      match (Tab.getType(selectedTab)) {
+        Info(content) => {
+          // Render selected tab content
+          renderInfo(f, content, Option.unwrap(List.nth(1, sections)))
+          // Render input box
+          renderInput(
+            f,
+            Tab.getInput(selectedTab),
+            Option.unwrap(List.nth(2, sections))
+          )
+        },
+        Channel(content) => {
+          // Render channel
+          renderChannel(
+            f,
+            content.channelContent,
+            Option.unwrap(List.nth(1, sections))
+          )
+          // Render input box
+          renderInput(
+            f,
+            Tab.getInput(selectedTab),
+            Option.unwrap(List.nth(2, sections))
+          )
+        },
+      }
+
+      return
+    })
+  }
+}

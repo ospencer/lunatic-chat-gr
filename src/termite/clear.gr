@@ -1,0 +1,16 @@
+module Clear
+
+include "./fmt"
+
+let createSequence = seq => {
+  let seq = "\x1B[" ++ seq
+  fmt => {
+    Fmt.write(fmt, seq)
+  }
+}
+
+provide let clearAll = createSequence("2J")
+provide let clearAfterCursor = createSequence("J")
+provide let clearBeforeCursor = createSequence("1J")
+provide let clearCurrentLine = createSequence("2K")
+provide let clearUntilNewline = createSequence("K")

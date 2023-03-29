@@ -1,0 +1,340 @@
+module Buffer
+
+include "array"
+include "char"
+include "list"
+include "number"
+include "string"
+include "uint16"
+
+include "./layout"
+from Layout use { Rect, type Rect }
+include "./style"
+from Style use { Modifier, type Color, type Modifier, type Style }
+include "./text"
+from Text use { type Span, type Spans }
+
+provide record Cell {
+  mut symbol: Char,
+  mut fgColor: Color,
+  mut bgColor: Color,
+  mut modifier: Modifier,
+}
+
+provide module Cell {
+  provide let default = () => {
+    { symbol: ' ', fgColor: Reset, bgColor: Reset, modifier: Modifier._EMPTY }
+  }
+
+  provide let setSymbol = (cell, symbol) => {
+    cell.symbol = symbol
+    cell
+  }
+
+  provide let setFg = (cell, color) => {
+    cell.fg = color
+    cell
+  }
+
+  provide let setBg = (cell, color) => {
+    cell.bg = color
+    cell
+  }
+
+  provide let setStyle = (cell, style: Style) => {
+    match (style.fg) {
+      Some(c) => cell.fgColor = c,
+      None => void,
+    }
+    match (style.bg) {
+      Some(c) => cell.bgColor = c,
+      None => void,
+    }
+    cell.modifier = Modifier.insert(cell.modifier, style.addModifier)
+    cell.modifier = Modifier.remove(cell.modifier, style.subModifier)
+    cell
+  }
+
+  provide let style = cell => {
+    let style = Style.defaultStyle()
+    Style.fg(style, cell.fgColor)
+    Style.bg(style, cell.bgColor)
+    Style.addModifier(style, cell.modifier)
+  }
+
+  provide let reset = cell => {
+    cell.symbol = ' '
+    cell.fgColor = Reset
+    cell.bgColor = Reset
+    cell.modifier = Modifier._EMPTY
+  }
+
+  provide let clone = cell => {
+    {
+      symbol: cell.symbol,
+      fgColor: cell.fgColor,
+      bgColor: cell.bgColor,
+      modifier: cell.modifier,
+    }
+  }
+}
+
+provide record Buffer {
+  /// The area represented by this buffer
+  mut area: Rect,
+  /// The contents of the buffer. The length of this array should always be equal to area.width *
+  /// area.height
+  mut contents: Array<Cell>,
+}
+
+provide module Buffer {
+  /// Returns a Buffer with all cells initialized with the attributes of the given Cell
+  provide let filled = (area, cell) => {
+    let size = Uint16.toNumber(Rect.area(area))
+    let contents = Array.init(size, (_) => Cell.clone(cell))
+    { area, contents }
+  }
+
+  /// Returns a Buffer with all cells set to the default one
+  provide let empty = (area: Rect) => {
+    filled(area, Cell.default())
+  }
+
+  provide let indexOf = (buffer, x, y) => {
+    from Uint16 use { (+), (-), (*), (<), (<=), (>), (>=) }
+    assert x >= Rect.left(buffer.area) &&
+      x < Rect.right(buffer.area) &&
+      y >= Rect.top(buffer.area) &&
+      y < Rect.bottom(buffer.area)
+
+    Uint16.toNumber(
+      (y - buffer.area.y) * buffer.area.width + (x - buffer.area.x)
+    )
+  }
+
+  provide let posOf = (buffer, i) => {
+    assert i < Array.length(buffer.contents)
+
+    from Uint16 use { (+), (/), rem as (%) }
+    let i = Uint16.fromNumber(i)
+    (
+      buffer.area.x +
+        i % buffer.area.width,
+      buffer.area.y +
+        i / buffer.area.width,
+    )
+  }
+
+  /// Returns the contents of the buffer as a slice
+  provide let contents = buffer => {
+    buffer.contents
+  }
+
+  /// Returns the area covered by this buffer
+  provide let area = buffer => {
+    buffer.area
+  }
+
+  /// Returns a reference to Cell at the given coordinates
+  provide let get = (buffer, x, y) => {
+    let i = indexOf(buffer, x, y)
+    buffer.contents[i]
+  }
+
+  let saturatingAdd = (x, y) => {
+    from Uint16 use { (+), (<) }
+    let sum = x + y
+    if (sum < x) 0xffffuS else sum
+  }
+
+  let saturatingSub = (x, y) => {
+    from Uint16 use { (-), (>) }
+    let diff = x - y
+    if (diff > x) 0x0uS else diff
+  }
+
+  /// Print at most the first n characters of a string if enough space is available
+  /// until the end of the line
+  provide let setStringN = (buffer, x, y, string, width, style) => {
+    let mut index = indexOf(buffer, x, y)
+    let mut xOffset = Uint16.toNumber(x)
+
+    let maxOffset = Number.min(
+      Uint16.toNumber(Rect.right(buffer.area)),
+      Uint16.toNumber(saturatingAdd(Uint16.fromNumber(width), x))
+    )
+    String.forEachCodePoint(c => {
+      let s = Char.fromCode(c)
+
+      Cell.setSymbol(buffer.contents[index], s)
+      Cell.setStyle(buffer.contents[index], style)
+      index += 1
+      xOffset += 1
+    }, string)
+    (Uint16.fromNumber(xOffset), y)
+  }
+
+  /// Print a string, starting at the position (x, y)
+  provide let setString = (buffer, x, y, string, style) => {
+    setStringN(buffer, x, y, string, 0xffff, style)
+  }
+
+  /// Returns a Buffer containing the given lines
+  provide let withLines = (buffer, lines) => {
+    let height = Uint16.fromNumber(List.length(lines))
+    let width = Uint16.fromNumber(
+      List.reduce((acc, line) => Number.max(acc, String.length(line)), 0, lines)
+    )
+    let buffer = empty({ x: 0uS, y: 0uS, width, height })
+    List.forEachi((line, y) => {
+      setString(buffer, 0uS, Uint16.fromNumber(y), line, Style.defaultStyle())
+      void
+    }, lines)
+    buffer
+  }
+
+  provide let setSpans = (buffer, x, y, spans: Spans, width) => {
+    let mut remainingWidth = width
+    let mut x = x
+    List.forEach((span: Span) => {
+      if (remainingWidth == 0uS) {
+        return
+      }
+      let (posX, posY) = setStringN(
+        buffer,
+        x,
+        y,
+        span.content,
+        Uint16.toNumber(remainingWidth),
+        span.style
+      )
+      let w = saturatingSub(posX, x)
+      x = posX
+      remainingWidth = saturatingSub(remainingWidth, w)
+      return
+    }, spans)
+    (x, y)
+  }
+
+  provide let setSpan = (buffer, x, y, span: Span, width) => {
+    setStringN(buffer, x, y, span.content, Uint16.toNumber(width), span.style)
+  }
+
+  provide let setStyle = (buffer, area: Rect, style: Style) => {
+    from Uint16 use { (+), (<) }
+
+    let top = Rect.top(area)
+    let bottom = Rect.bottom(area)
+    let left = Rect.left(area)
+    let right = Rect.right(area)
+    for (let mut y = top; y < bottom; y += 1uS) {
+      for (let mut x = left; x < right; x += 1uS) {
+        Cell.setStyle(get(buffer, x, y), style)
+        void
+      }
+    }
+  }
+
+  /// Resize the buffer so that the mapped area matches the given area and that the buffer
+  /// length is equal to area.width * area.height
+  provide let resize = (buffer, area: Rect) => {
+    let length = Uint16.toNumber(Rect.area(area))
+    if (Array.length(buffer.contents) > length) {
+      buffer.contents = Array.slice(0, end=length, buffer.contents)
+    } else {
+      let contents = buffer.contents
+      buffer.contents = Array.init(length, i => {
+        if (i < Array.length(contents)) {
+          contents[i]
+        } else {
+          Cell.default()
+        }
+      })
+    }
+    buffer.area = area
+  }
+
+  /// Reset all cells in the buffer
+  provide let reset = buffer => {
+    Array.forEach(Cell.reset, buffer.contents)
+  }
+
+  /// Merge another buffer into this one
+  provide let merge = (buffer, other) => {
+    let area = Rect.union(buffer.area, other.area)
+    resize(buffer, area)
+
+    // Move original contents to the appropriate space
+    let size = Uint16.toNumber(Rect.area(buffer.area))
+    for (let mut i = size - 1; i >= 0; i -= 1) {
+      let (x, y) = posOf(buffer, i)
+      // New index in contents
+      from Uint16 use { (+), (-), (*) }
+      let k = Uint16.toNumber((y - area.y) * area.width + x - area.x)
+      if (i != k) {
+        buffer.contents[k] = Cell.clone(buffer.contents[i])
+        buffer.contents[i] = Cell.default()
+      }
+    }
+
+    // Push contents of the other buffer into this one (may erase previous
+    // data)
+    let size = Uint16.toNumber(Rect.area(other.area))
+    for (let mut i = 0; i < size; i += 1) {
+      let (x, y) = posOf(other, i)
+      // New index in contents
+      from Uint16 use { (+), (-), (*) }
+      let k = Uint16.toNumber((y - area.y) * area.width + x - area.x)
+      buffer.contents[k] = Cell.clone(other.contents[i])
+    }
+    buffer.area = area
+  }
+
+  /// Builds a minimal sequence of coordinates and Cells necessary to update the UI from
+  /// self to other.
+  ///
+  /// We're assuming that buffers are well-formed, that is no double-width cell is followed by
+  /// a non-blank cell.
+  ///
+  /// # Multi-width characters handling:
+  ///
+  /// ```text
+  /// (Index:) `01`
+  /// Prev:    `コ`
+  /// Next:    `aa`
+  /// Updates: `0: a, 1: a'
+  /// ```
+  ///
+  /// ```text
+  /// (Index:) `01`
+  /// Prev:    `a `
+  /// Next:    `コ`
+  /// Updates: `0: コ` (double width symbol at index 0 - skip index 1)
+  /// ```
+  ///
+  /// ```text
+  /// (Index:) `012`
+  /// Prev:    `aaa`
+  /// Next:    `aコ`
+  /// Updates: `0: a, 1: コ` (double width symbol at index 1 - skip index 2)
+  /// ```
+  provide let diff = (buffer, other) => {
+    let previousBuffer = buffer.contents
+    let nextBuffer = other.contents
+    let width = buffer.area.width
+
+    let mut updates = []
+    let length = Uint16.fromNumber(Array.length(previousBuffer))
+    from Uint16 use { (+), (<), (/), rem as (%) }
+    for (let mut i = 0uS; i < length; i += 1uS) {
+      let current = nextBuffer[Uint16.toNumber(i)]
+      let previous = previousBuffer[Uint16.toNumber(i)]
+      if (current != previous) {
+        let x = i % width
+        let y = i / width
+        updates = [(x, y, current), ...updates]
+      }
+    }
+    updates
+  }
+}

@@ -1,0 +1,204 @@
+module Terminal
+
+include "result"
+
+include "./backend"
+from Backend use { type Backend }
+include "./buffer"
+from Buffer use { Buffer, type Buffer }
+include "./layout"
+from Layout use { type Rect }
+include "./widgets"
+from Widgets use { type Widget }
+
+provide enum ResizeBehavior {
+  Fixed,
+  Auto,
+}
+
+abstract record Viewport {
+  mut area: Layout.Rect,
+  mut resizeBehavior: ResizeBehavior,
+}
+
+abstract record Terminal {
+  backend: Backend.Backend,
+  /// Holds the results of the current and previous draw calls. The two are compared at the end
+  /// of each draw pass to output the necessary updates to the terminal
+  buffers: Array<Buffer>,
+  /// Index of the current buffer in the previous array
+  mut current: Number,
+  /// Whether the cursor is currently hidden
+  mut hiddenCursor: Bool,
+  /// Viewport
+  viewport: Viewport,
+}
+
+/// Represents a consistent terminal interface for rendering.
+abstract record Frame {
+  terminal: Terminal,
+  /// Where should the cursor be after drawing this frame?
+  ///
+  /// If `None`, the cursor is hidden and its position is controlled by the backend. If `Some((x,
+  /// y))`, the cursor is shown and placed at `(x, y)` after the call to `Terminal::draw()`.
+  mut cursorPosition: Option<(Uint16, Uint16)>,
+}
+
+provide record CompletedFrame {
+  buffer: Buffer,
+  area: Rect,
+}
+
+provide module Terminal {
+  /// UNSTABLE
+  provide let withViewport = (backend, viewport: Viewport) => {
+    Ok(
+      {
+        backend,
+        buffers: [> Buffer.empty(viewport.area), Buffer.empty(viewport.area)],
+        current: 0,
+        hiddenCursor: false,
+        viewport,
+      }
+    )
+  }
+
+  /// Wrapper around Terminal initialization. Each buffer is initialized with a blank string and
+  /// default colors for the foreground and the background
+  provide let new = backend => {
+    let size = Result.unwrap(backend.size(backend))
+    withViewport(backend, { area: size, resizeBehavior: Auto })
+  }
+
+  /// Get a Frame object which provides a consistent view into the terminal state for rendering.
+  provide let getFrame = terminal => {
+    { terminal, cursorPosition: None }
+  }
+
+  provide let currentBuffer = terminal => {
+    terminal.buffers[terminal.current]
+  }
+
+  provide let backend = terminal => {
+    terminal.backend
+  }
+
+  /// Obtains a difference between the previous and the current buffer and passes it to the
+  /// current backend for drawing.
+  provide let flush = terminal => {
+    let previousBuffer = terminal.buffers[1 - terminal.current]
+    let currentBuffer = terminal.buffers[terminal.current]
+    let updates = Buffer.diff(previousBuffer, currentBuffer)
+    terminal.backend.draw(terminal.backend, updates)
+  }
+
+  provide let hideCursor = terminal => {
+    Result.unwrap(terminal.backend.hideCursor(terminal.backend))
+    terminal.hiddenCursor = true
+    Ok(void)
+  }
+
+  provide let showCursor = terminal => {
+    Result.unwrap(terminal.backend.showCursor(terminal.backend))
+    terminal.hiddenCursor = false
+    Ok(void)
+  }
+
+  provide let getCursor = terminal => {
+    terminal.backend.getCursor(terminal.backend)
+  }
+
+  provide let setCursor = (terminal, x, y) => {
+    terminal.backend.setCursor(terminal.backend, x, y)
+  }
+
+  /// Clear the terminal and force a full redraw on the next draw call.
+  provide let clear = terminal => {
+    Result.unwrap(terminal.backend.clear(terminal.backend))
+    // Reset the back buffer to make sure the next update will redraw everything.
+    Buffer.reset(terminal.buffers[1 - terminal.current])
+    Ok(void)
+  }
+
+  /// Queries the real size of the backend.
+  provide let size = terminal => {
+    terminal.backend.size(terminal.backend)
+  }
+
+  /// Updates the Terminal so that internal buffers match the requested size. Requested size will
+  /// be saved so the size can remain consistent when rendering.
+  /// This leads to a full clear of the screen.
+  provide let resize = (terminal, area: Rect) => {
+    Buffer.resize(terminal.buffers[terminal.current], area)
+    Buffer.resize(terminal.buffers[1 - terminal.current], area)
+    terminal.viewport.area = area
+    clear(terminal)
+  }
+
+  /// Queries the backend for size and resizes if it doesn't match the previous size.
+  provide let autoresize = terminal => {
+    if (terminal.viewport.resizeBehavior == Auto) {
+      let size = Result.unwrap(size(terminal))
+      if (size != terminal.viewport.area) {
+        Result.unwrap(resize(terminal, size))
+      }
+    }
+    Ok(void)
+  }
+
+  /// Synchronizes terminal size, calls the rendering closure, flushes the current internal state
+  /// and prepares for the next draw call.
+  provide let draw = (terminal, f) => {
+    // Autoresize - otherwise we get glitches if shrinking or potential desync between widgets
+    // and the terminal (if growing), which may OOB.
+    Result.unwrap(autoresize(terminal))
+
+    let frame = getFrame(terminal)
+    f(frame)
+    // We can't change the cursor position right away because we have to flush the frame to
+    // stdout first. But we also can't keep the frame around, since it holds a &mut to
+    // Terminal. Thus, we're taking the important data out of the Frame and dropping it.
+    let cursorPosition = frame.cursorPosition
+
+    // Draw to stdout
+    Result.unwrap(flush(terminal))
+
+    match (cursorPosition) {
+      None => Result.unwrap(hideCursor(terminal)),
+      Some((x, y)) => {
+        Result.unwrap(showCursor(terminal))
+        Result.unwrap(setCursor(terminal, x, y))
+      },
+    }
+
+    // Swap buffers
+    Buffer.reset(terminal.buffers[1 - terminal.current])
+    terminal.current = 1 - terminal.current
+
+    // Flush
+    Result.unwrap(terminal.backend.flush(terminal.backend))
+    Ok(
+      {
+        buffer: terminal.buffers[1 - terminal.current],
+        area: terminal.viewport.area,
+      }
+    )
+  }
+}
+
+provide module Frame {
+  /// Terminal size, guaranteed not to change when rendering.
+  provide let size = frame => {
+    frame.terminal.viewport.area
+  }
+
+  provide let renderWidget = (frame, widget: Widget, area: Rect) => {
+    widget(area, Terminal.currentBuffer(frame.terminal))
+  }
+
+  /// After drawing this frame, make the cursor visible and put it at the specified (x, y)
+  /// coordinates. If this method is not called, the cursor will be hidden.
+  provide let setCursor = (frame, x, y) => {
+    frame.cursorPosition = Some((x, y))
+  }
+}

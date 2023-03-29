@@ -1,0 +1,12 @@
+module Widgets
+
+include "./buffer"
+include "./layout"
+
+include "./widgets/block"
+include "./widgets/borders"
+include "./widgets/paragraph"
+include "./widgets/tabs"
+
+provide type Widget = (Layout.Rect, Buffer.Buffer) -> Void
+provide { Block, Borders, Paragraph, Tabs }

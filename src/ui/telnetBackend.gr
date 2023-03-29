@@ -1,0 +1,251 @@
+module TelnetBackend
+
+include "buffer"
+include "char"
+include "list"
+include "uint16"
+
+include "lunatic"
+from Lunatic use { Net }
+
+include "../tui/backend"
+from Backend use { type Backend }
+include "../tui/buffer" as TuiBuffer
+from TuiBuffer use { Cell, type Cell }
+include "../tui/layout"
+include "../tui/style"
+from Style use { type Color, Modifier, type Modifier }
+
+include "../termite"
+from Termite use { Fmt }
+
+primitive magic = "@magic"
+
+provide record WindowSize {
+  mut width: Uint16,
+  mut height: Uint16,
+}
+
+provide module WindowSize {
+  provide let new = () => {
+    { width: 0uS, height: 0uS }
+  }
+}
+
+record ModifierDiff {
+  old: Modifier,
+  new: Modifier,
+}
+
+let applyFg = (fmt, fg) => {
+  match (fg) {
+    Reset => Termite.Color.fgReset(fmt),
+    Black => Termite.Color.fgBlack(fmt),
+    Red => Termite.Color.fgRed(fmt),
+    Green => Termite.Color.fgGreen(fmt),
+    Yellow => Termite.Color.fgYellow(fmt),
+    Blue => Termite.Color.fgBlue(fmt),
+    Magenta => Termite.Color.fgMagenta(fmt),
+    Cyan => Termite.Color.fgCyan(fmt),
+    Gray => Termite.Color.fgWhite(fmt),
+    DarkGray => Termite.Color.fgLightBlack(fmt),
+    LightRed => Termite.Color.fgLightRed(fmt),
+    LightGreen => Termite.Color.fgLightGreen(fmt),
+    LightBlue => Termite.Color.fgLightBlue(fmt),
+    LightYellow => Termite.Color.fgLightYellow(fmt),
+    LightMagenta => Termite.Color.fgLightMagenta(fmt),
+    LightCyan => Termite.Color.fgLightCyan(fmt),
+    White => Termite.Color.fgLightWhite(fmt),
+  }
+}
+
+let applyBg = (fmt, bg) => {
+  match (bg) {
+    Reset => Termite.Color.bgReset(fmt),
+    Black => Termite.Color.bgBlack(fmt),
+    Red => Termite.Color.bgRed(fmt),
+    Green => Termite.Color.bgGreen(fmt),
+    Yellow => Termite.Color.bgYellow(fmt),
+    Blue => Termite.Color.bgBlue(fmt),
+    Magenta => Termite.Color.bgMagenta(fmt),
+    Cyan => Termite.Color.bgCyan(fmt),
+    Gray => Termite.Color.bgWhite(fmt),
+    DarkGray => Termite.Color.bgLightBlack(fmt),
+    LightRed => Termite.Color.bgLightRed(fmt),
+    LightGreen => Termite.Color.bgLightGreen(fmt),
+    LightBlue => Termite.Color.bgLightBlue(fmt),
+    LightYellow => Termite.Color.bgLightYellow(fmt),
+    LightMagenta => Termite.Color.bgLightMagenta(fmt),
+    LightCyan => Termite.Color.bgLightCyan(fmt),
+    White => Termite.Color.bgLightWhite(fmt),
+  }
+}
+
+let applyModifierDiff = (fmt, modifier) => {
+  from Uint16 use { (-), (&), lnot }
+  let remove = modifier.old & lnot(modifier.new)
+  let contains = (modifier, flag) => {
+    (modifier & flag) == flag
+  }
+  if (contains(remove, Modifier._REVERSED)) {
+    Termite.Style.noInvert(fmt)
+  }
+  if (contains(remove, Modifier._BOLD)) {
+    // XXX: the termion NoBold flag actually enables double-underline on ECMA-48 compliant
+    // terminals, and NoFaint additionally disables bold... so we use this trick to get
+    // the right semantics.
+    Termite.Style.noFaint(fmt)
+
+    if (contains(modifier.new, Modifier._DIM)) {
+      Termite.Style.faint(fmt)
+    }
+  }
+  if (contains(remove, Modifier._ITALIC)) {
+    Termite.Style.noItalic(fmt)
+  }
+  if (contains(remove, Modifier._UNDERLINED)) {
+    Termite.Style.noUnderline(fmt)
+  }
+  if (contains(remove, Modifier._DIM)) {
+    Termite.Style.noFaint(fmt)
+
+    // XXX: the NoFaint flag additionally disables bold as well, so we need to re-enable it
+    // here if we want it.
+    if (contains(modifier.new, Modifier._BOLD)) {
+      Termite.Style.bold(fmt)
+    }
+  }
+  if (contains(remove, Modifier._CROSSED_OUT)) {
+    Termite.Style.noCrossedOut(fmt)
+  }
+  if (
+    contains(remove, Modifier._SLOW_BLINK) ||
+    contains(remove, Modifier._RAPID_BLINK)
+  ) {
+    Termite.Style.noBlink(fmt)
+  }
+
+  let add = modifier.new & lnot(modifier.old)
+  if (contains(add, Modifier._REVERSED)) {
+    Termite.Style.invert(fmt)
+  }
+  if (contains(add, Modifier._BOLD)) {
+    Termite.Style.bold(fmt)
+  }
+  if (contains(add, Modifier._ITALIC)) {
+    Termite.Style.italic(fmt)
+  }
+  if (contains(add, Modifier._UNDERLINED)) {
+    Termite.Style.underline(fmt)
+  }
+  if (contains(add, Modifier._DIM)) {
+    Termite.Style.faint(fmt)
+  }
+  if (contains(add, Modifier._CROSSED_OUT)) {
+    Termite.Style.crossedOut(fmt)
+  }
+  if (
+    contains(add, Modifier._SLOW_BLINK) || contains(add, Modifier._RAPID_BLINK)
+  ) {
+    Termite.Style.blink(fmt)
+  }
+
+  Ok(void)
+}
+
+provide let new = (tcpStream, windowSize) => {
+  // Start at the top left
+  Net.Tcp.writeString(tcpStream, "\u{001B}[0;0H")
+
+  let draw = (backend, content) => {
+    let buffer = Buffer.make(4096)
+    let fmt = magic(Fmt.make(str => Buffer.addString(str, buffer)))
+    let mut fg = Reset
+    let mut bg = Reset
+    let mut modifier = Modifier._EMPTY
+    let mut lastPos = None
+    List.forEach(((x, y, cell)) => {
+      from Uint16 use { (+) }
+      // Move the cursor if the previous location was not (x - 1, y)
+      match (lastPos) {
+        Some((xLast, yLast)) when x == xLast + 1uS && y == yLast => void,
+        _ => Termite.Cursor.goto(fmt, x + 1uS, y + 1uS),
+      }
+      lastPos = Some((x, y))
+      if (cell.modifier != modifier) {
+        applyModifierDiff(fmt, { old: modifier, new: cell.modifier })
+        modifier = cell.modifier
+      }
+      if (cell.fgColor != fg) {
+        applyFg(fmt, cell.fgColor)
+        fg = cell.fgColor
+      }
+      if (cell.bgColor != bg) {
+        applyBg(fmt, cell.bgColor)
+        bg = cell.bgColor
+      }
+      Fmt.write(fmt, Char.toString(cell.symbol))
+    }, content)
+
+    applyFg(fmt, Reset)
+    applyBg(fmt, Reset)
+    Termite.Style.reset(fmt)
+
+    Net.Tcp.write(tcpStream, Buffer.toBytes(buffer))
+
+    Ok(void)
+  }
+
+  let fmt = magic(Fmt.make(str => ignore(Net.Tcp.writeString(tcpStream, str))))
+
+  let hideCursor = backend => {
+    Termite.Cursor.hide(fmt)
+    Net.Tcp.flush(tcpStream)
+    Ok(void)
+  }
+
+  let showCursor = backend => {
+    Termite.Cursor.show(fmt)
+    Net.Tcp.flush(tcpStream)
+    Ok(void)
+  }
+
+  let getCursor = backend => {
+    Ok((0uS, 0uS))
+  }
+
+  let setCursor = (backend, x, y) => {
+    from Uint16 use { (+) }
+    Termite.Cursor.goto(fmt, x + 1uS, y + 1uS)
+    Net.Tcp.flush(tcpStream)
+    Ok(void)
+  }
+
+  let clear = backend => {
+    Termite.Clear.clearAll(fmt)
+    Termite.Cursor.goto(fmt, 1uS, 1uS)
+    Net.Tcp.flush(tcpStream)
+    Ok(void)
+  }
+
+  let size = backend => {
+    let { width, height } = windowSize
+    Ok(Layout.Rect.new(0uS, 0uS, width, height))
+  }
+
+  let flush = backend => {
+    Net.Tcp.flush(tcpStream)
+    Ok(void)
+  }
+
+  {
+    draw: magic(draw),
+    hideCursor,
+    showCursor,
+    getCursor,
+    setCursor,
+    clear,
+    size,
+    flush,
+  }
+}

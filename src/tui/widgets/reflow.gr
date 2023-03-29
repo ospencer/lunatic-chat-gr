@@ -1,0 +1,145 @@
+module Reflow
+
+include "array"
+include "list"
+include "string"
+include "uint16"
+
+include "../text"
+from Text use { type StyledGrapheme }
+
+let _NBSP = '\u{00a0}'
+
+provide record LineComposer {
+  next: () -> Option<(List<StyledGrapheme>, Uint16)>,
+}
+
+abstract record WordWrapper {
+  mut symbols: List<StyledGrapheme>,
+  maxLineWidth: Uint16,
+  mut currentLine: List<StyledGrapheme>,
+  mut nextLine: List<StyledGrapheme>,
+  /// Removes the leading whitespace from lines
+  trim: Bool,
+}
+
+provide module WordWrapper {
+  provide let new =
+    (
+      symbols: List<StyledGrapheme>,
+      maxLineWidth: Uint16,
+      trim: Bool,
+    ) => {
+    { symbols, maxLineWidth, currentLine: [], nextLine: [], trim }
+  }
+
+  let nextLine = wordWrapper => {
+    if (wordWrapper.maxLineWidth == 0uS) {
+      return None
+    }
+    // std::mem::swap(wordWrapper.currentLine, wordWrapper.nextLine);
+    // wordWrapper.nextLine.truncate(0);
+    wordWrapper.currentLine = wordWrapper.nextLine
+    wordWrapper.nextLine = []
+
+    let mut currentLineWidth = Uint16.fromNumber(
+      List.length(wordWrapper.currentLine)
+    )
+
+    let mut symbolsToLastWordEnd = 0
+    let mut widthToLastWordEnd = 0uS
+    let mut prevWhitespace = false
+    let mut symbolsExhausted = true
+    let mut currentLine = []
+
+    while (true) {
+      match (wordWrapper.symbols) {
+        [{ symbol, symbolStyle }, ...rest] => {
+          wordWrapper.symbols = rest
+
+          from Uint16 use { (+), (>) }
+
+          symbolsExhausted = false
+          let symbolWhitespace = symbol == ' ' && symbol != _NBSP
+
+          // Ignore characters wider than the total max width.
+          // Skip leading whitespace when trim is enabled.
+          if (
+            wordWrapper.trim &&
+            symbolWhitespace &&
+            symbol != '\n' &&
+            currentLineWidth == 0uS
+          ) {
+            continue
+          }
+
+          // Break on newline and discard it.
+          if (symbol == '\n') {
+            if (prevWhitespace) {
+              currentLineWidth = widthToLastWordEnd
+              currentLine = List.drop(
+                List.length(currentLine) - symbolsToLastWordEnd,
+                currentLine
+              )
+            }
+            break
+          }
+
+          // Mark the previous symbol as word end.
+          if (symbolWhitespace && !prevWhitespace) {
+            symbolsToLastWordEnd = List.length(currentLine)
+            widthToLastWordEnd = currentLineWidth
+          }
+
+          currentLine = [{ symbol, symbolStyle }, ...currentLine]
+          currentLineWidth += 1uS
+
+          if (currentLineWidth > wordWrapper.maxLineWidth) {
+            // If there was no word break in the text, wrap at the end of the line.
+            let (truncateAt, truncatedWidth) = if (symbolsToLastWordEnd != 0) {
+              (symbolsToLastWordEnd, widthToLastWordEnd)
+            } else {
+              (List.length(currentLine) - 1, wordWrapper.maxLineWidth)
+            }
+
+            // Push the remainder to the next line but strip leading whitespace:
+            let remainder = List.drop(truncateAt, List.reverse(currentLine))
+            let index = List.findIndex(({ symbol, _ }) => {
+              !(symbol == ' ' || symbol == '\n')
+            }, remainder)
+            match (index) {
+              Some(remainderNonwhite) => {
+                wordWrapper.nextLine = List.drop(remainderNonwhite, remainder)
+              },
+              None => void,
+            }
+
+            currentLine = List.drop(
+              List.length(currentLine) - truncateAt,
+              currentLine
+            )
+            currentLineWidth = truncatedWidth
+            break
+          }
+
+          prevWhitespace = symbolWhitespace
+        },
+        _ => break,
+      }
+    }
+
+    wordWrapper.currentLine = List.reverse(currentLine)
+
+    // Even if the iterator is exhausted, pass the previous remainder.
+    return if (symbolsExhausted && List.length(wordWrapper.currentLine) == 0) {
+      None
+    } else {
+      Some((wordWrapper.currentLine, currentLineWidth))
+    }
+  }
+
+  provide let lineComposer = wordWrapper =>
+    {
+      next: () => nextLine(wordWrapper),
+    }
+}

@@ -1,0 +1,116 @@
+module Channel
+
+include "list"
+include "result"
+include "set"
+
+include "lunatic"
+from Lunatic use { Process }
+
+include "./clientMessage"
+from ClientMessage use { clientMessageMailbox, type ClientMessage }
+include "./process" as ChatProcess
+from ChatProcess use { type ChannelProcess, type ClientProcess }
+
+/// A channel dispatches messages to all clients that are part of it.
+///
+/// It also keeps the last few messages saved, so that it can bootstrap a new client that joins.
+provide record Channel {
+  clients: Set.Set<ClientProcess>,
+  mut lastMessages: List<(String, String)>,
+}
+
+/// join the channel.
+let join = (channel, client: ClientProcess) => {
+  Set.add(client, channel.clients)
+}
+
+/// leave the channel.
+let leave = (channel, client: ClientProcess) => {
+  Set.remove(client, channel.clients)
+}
+
+/// Returns up to 10 last messages received by the channel.
+let getLastMessages = channel => {
+  channel.lastMessages
+}
+
+let actionMailbox = Process.createMailbox()
+let lastMessagesMailbox = Process.createMailbox()
+
+/// Sent a new message to the channel.
+let broadcastMessage =
+  (
+    channel,
+    channelName: String,
+    name: String,
+    message: String,
+  ) => {
+  // Save
+  channel.lastMessages = List.append(channel.lastMessages, [(name, message)])
+  // If too many last messages, drain
+  if (List.length(channel.lastMessages) > 10) {
+    channel.lastMessages = List.drop(5, channel.lastMessages)
+  }
+  // Broadcast message to all clients
+  let fullMessage = Client(channelName, name, message)
+  Set.forEach(client => {
+    Process.send(client, fullMessage, clientMessageMailbox)
+    void
+  }, channel.clients)
+}
+
+enum ChannelAction {
+  Join(ClientProcess),
+  Leave(ClientProcess),
+  SendMessage(String, String, String),
+  GetLastMessages(ClientProcess),
+  Shutdown,
+}
+
+provide let newChannel = () => {
+  let channel = { clients: Set.make(), lastMessages: [] }
+
+  while (true) {
+    match (Result.unwrap(Process.receive(actionMailbox))) {
+      Join(client) => {
+        join(channel, client)
+      },
+      Leave(client) => leave(channel, client),
+      SendMessage(channelName, name, message) =>
+        broadcastMessage(channel, channelName, name, message),
+      GetLastMessages(client) => {
+        Process.send(client, getLastMessages(channel), lastMessagesMailbox)
+        void
+      },
+      Shutdown => break,
+    }
+  }
+}
+
+// These functions are to be called by individual clients
+
+provide let join = (channel, client) => {
+  Process.send(channel, Join(client), actionMailbox)
+  void
+}
+
+provide let getLastMessages = (channel, client) => {
+  Process.send(channel, GetLastMessages(client), actionMailbox)
+  Process.receive(lastMessagesMailbox)
+}
+
+provide let leave = (channel, client) => {
+  Process.send(channel, Leave(client), actionMailbox)
+  void
+}
+
+provide let sendMessage = (channel, channelName, name, message) => {
+  Process.send(channel, SendMessage(channelName, name, message), actionMailbox)
+  void
+}
+
+provide let shutdown = channel => {
+  Process.send(channel, Shutdown, actionMailbox)
+  void
+}

@@ -1,0 +1,9 @@
+module Termite
+
+include "./termite/clear"
+include "./termite/color"
+include "./termite/cursor"
+include "./termite/fmt"
+include "./termite/style"
+
+provide { Clear, Color, Cursor, Fmt, Style }

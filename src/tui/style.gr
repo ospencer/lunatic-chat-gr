@@ -1,0 +1,120 @@
+module Style
+
+include "option"
+include "uint16"
+
+provide enum Color {
+  Reset,
+  Black,
+  Red,
+  Green,
+  Yellow,
+  Blue,
+  Magenta,
+  Cyan,
+  Gray,
+  DarkGray,
+  LightRed,
+  LightGreen,
+  LightYellow,
+  LightBlue,
+  LightMagenta,
+  LightCyan,
+  White,
+  // Rgb(u8, u8, u8),
+  // Indexed(u8),
+}
+
+provide type Modifier = Uint16
+
+provide module Modifier {
+  provide let _EMPTY: Modifier = 0b0000_0000_0000uS
+  provide let _BOLD: Modifier = 0b0000_0000_0001uS
+  provide let _DIM: Modifier = 0b0000_0000_0010uS
+  provide let _ITALIC: Modifier = 0b0000_0000_0100uS
+  provide let _UNDERLINED: Modifier = 0b0000_0000_1000uS
+  provide let _SLOW_BLINK: Modifier = 0b0000_0001_0000uS
+  provide let _RAPID_BLINK: Modifier = 0b0000_0010_0000uS
+  provide let _REVERSED: Modifier = 0b0000_0100_0000uS
+  provide let _HIDDEN: Modifier = 0b0000_1000_0000uS
+  provide let _CROSSED_OUT: Modifier = 0b0001_0000_0000uS
+
+  provide let insert: (Modifier, Modifier) -> Modifier = (modifier, toAdd) => {
+    from Uint16 use { (|) }
+    modifier | toAdd
+  }
+
+  provide let remove: (Modifier, Modifier) -> Modifier =
+    (
+      modifier,
+      toRemove,
+    ) => {
+    from Uint16 use { (&), lnot }
+    modifier & lnot(toRemove)
+  }
+}
+
+provide record Style {
+  mut fg: Option<Color>,
+  mut bg: Option<Color>,
+  mut addModifier: Modifier,
+  mut subModifier: Modifier,
+}
+
+provide let defaultStyle = () =>
+  {
+    fg: None,
+    bg: None,
+    addModifier: 0uS,
+    subModifier: 0uS,
+  }
+
+provide let reset = () =>
+  {
+    fg: Some(Reset),
+    bg: Some(Reset),
+    addModifier: 0uS,
+    subModifier: 0xffffuS,
+  }
+
+provide let clone = style =>
+  {
+    fg: style.fg,
+    bg: style.bg,
+    addModifier: style.addModifier,
+    subModifier: style.subModifier,
+  }
+
+provide let fg = (style, color) => {
+  style.fg = Some(color)
+  style
+}
+
+provide let bg = (style, color) => {
+  style.bg = Some(color)
+  style
+}
+
+provide let addModifier = (style, modifier) => {
+  style.subModifier = Modifier.remove(style.subModifier, modifier)
+  style.addModifier = Modifier.insert(style.addModifier, modifier)
+  style
+}
+
+provide let removeModifier = (style, modifier) => {
+  style.addModifier = Modifier.remove(style.addModifier, modifier)
+  style.subModifier = Modifier.insert(style.subModifier, modifier)
+  style
+}
+
+provide let patch = (style, other) => {
+  style.fg = Option.or(other.fg, style.fg)
+  style.bg = Option.or(other.bg, style.bg)
+
+  style.addModifier = Modifier.remove(style.addModifier, other.subModifier)
+  style.addModifier = Modifier.insert(style.addModifier, other.addModifier)
+  style.subModifier = Modifier.remove(style.subModifier, other.addModifier)
+  style.subModifier = Modifier.insert(style.subModifier, other.subModifier)
+
+  style
+}

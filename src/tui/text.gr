@@ -1,0 +1,81 @@
+module Text
+
+include "array"
+include "char"
+include "list"
+include "number"
+include "string"
+
+include "./style"
+
+provide record StyledGrapheme {
+  symbol: Char,
+  symbolStyle: Style.Style,
+}
+
+provide record Span {
+  content: String,
+  style: Style.Style,
+}
+
+provide let rawSpan = content => { content, style: Style.defaultStyle() }
+provide let styledSpan = (content, style) => { content, style }
+
+provide let spanWidth = span => String.length(span.content)
+
+provide let styledGraphemes = (span, baseStyle) => {
+  let mut graphemes = []
+  String.forEachCodePoint(p => {
+    graphemes = [
+      {
+        symbol: Char.fromCode(p),
+        symbolStyle: Style.patch(Style.clone(baseStyle), span.style),
+      },
+      ...graphemes
+    ]
+  }, span.content)
+  List.reverse(graphemes)
+}
+
+provide type Spans = List<Span>
+
+provide let rawSpans = content => [rawSpan(content)]: Spans
+
+provide let spansWidth = (spans: Spans) => {
+  List.reduce((acc, span) => {
+    acc + spanWidth(span)
+  }, 0, spans)
+}
+
+provide type Text = List<Spans>
+
+provide let patchStyle = (text: Text, style) => {
+  List.forEach(line => {
+    List.forEach(span => {
+      Style.patch(span.style, style)
+      void
+    }, line)
+  }, text)
+}
+
+provide let rawText = content => {
+  let lines = String.split("\n", content)
+  let lines = Array.toList(lines)
+  List.map(line => [rawSpan(line)], lines): Text
+}
+
+provide let styledText = (content, style) => {
+  let text = rawText(content)
+  patchStyle(text, style)
+  text
+}
+
+provide let textWidth = (text: Text) => {
+  List.reduce((acc, line) => {
+    Number.max(acc, spansWidth(line))
+  }, 0, text)
+}
+
+provide let textHeight = (text: Text) => {
+  List.length(text)
+}

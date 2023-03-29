@@ -1,0 +1,9 @@
+module Process
+
+include "lunatic"
+
+from Lunatic use { Process }
+
+provide type CoordinatorProcess = Process.Process
+provide type ClientProcess = Process.Process
+provide type ChannelProcess = Process.Process

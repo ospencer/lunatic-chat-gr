@@ -1,0 +1,19 @@
+module Borders
+
+provide type Borders = Uint16
+
+include "uint16"
+from Uint16 use { (|) }
+
+/// Show no border (default)
+provide let _NONE = 0b0000_0001uS
+/// Show the top border
+provide let _TOP = 0b0000_0010uS
+/// Show the right border
+provide let _RIGHT = 0b0000_0100uS
+/// Show the bottom border
+provide let _BOTTOM = 0b000_1000uS
+/// Show the left border
+provide let _LEFT = 0b0001_0000uS
+/// Show all borders
+provide let _ALL = _TOP | _RIGHT | _BOTTOM | _LEFT

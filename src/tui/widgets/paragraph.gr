@@ -1,0 +1,170 @@
+module Paragraph
+
+include "array"
+include "list"
+include "option"
+include "string"
+include "uint16"
+
+include "./block"
+from Block use { type Block }
+include "../buffer"
+from Buffer use { Buffer, type Buffer, Cell, type Cell }
+include "../layout"
+from Layout use { type Alignment, Rect, type Rect }
+include "./reflow"
+from Reflow use { WordWrapper }
+include "../style"
+from Style use { type Style }
+include "../text"
+from Text use { type StyledGrapheme, type Text }
+
+let saturatingSub = (x, y) => {
+  from Uint16 use { (-), (>) }
+  let diff = x - y
+  if (diff > x) 0x0uS else diff
+}
+
+let getLineOffset =
+  (
+    lineWidth: Uint16,
+    textAreaWidth: Uint16,
+    alignment: Alignment,
+  ) => {
+  from Uint16 use { (/) }
+  match (alignment) {
+    Center => saturatingSub(textAreaWidth / 2uS, lineWidth / 2uS),
+    Right => saturatingSub(textAreaWidth, lineWidth),
+    Left => 0uS,
+  }
+}
+
+provide record Wrap {
+  /// Should leading whitespace be trimmed
+  trim: Bool,
+}
+
+abstract record Paragraph {
+  /// A block to wrap the widget in
+  mut block: Option<Block>,
+  /// Widget style
+  mut style: Style,
+  /// How to wrap the text
+  mut wrap: Option<Wrap>,
+  /// The text to display
+  mut text: Text,
+  /// Scroll
+  mut scroll: (
+    Uint16,
+    Uint16
+  ),
+  /// Alignment of the text
+  mut alignment: Alignment,
+}
+
+provide let new = text => {
+  {
+    block: None,
+    style: Style.defaultStyle(),
+    wrap: None,
+    text,
+    scroll: (0uS, 0uS),
+    alignment: Left,
+  }
+}
+
+provide let block = (paragraph, block: Block) => {
+  paragraph.block = Some(block)
+  paragraph
+}
+
+provide let style = (paragraph, style: Style) => {
+  paragraph.style = style
+  paragraph
+}
+
+provide let wrap = (paragraph, wrap: Wrap) => {
+  paragraph.wrap = Some(wrap)
+  paragraph
+}
+
+provide let scroll = (paragraph, offset) => {
+  paragraph.scroll = offset
+  paragraph
+}
+
+provide let alignment = (paragraph, alignment: Alignment) => {
+  paragraph.alignment = alignment
+  paragraph
+}
+
+provide let render = (paragraph, area: Rect, buf: Buffer) => {
+  from Uint16 use { (+), (-), (<), (>=) }
+
+  Buffer.setStyle(buf, area, paragraph.style)
+  let textArea = match (paragraph.block) {
+    Some(b) => {
+      let innerArea = Block.inner(b, area)
+      Block.render(b, area, buf)
+      innerArea
+    },
+    None => area,
+  }
+
+  if (textArea.height < 1uS) {
+    return
+  }
+
+  let style = paragraph.style
+  let newline = { symbol: '\n', symbolStyle: style }
+  let styled = List.reverse(
+    List.reduce((acc, spans) => {
+      let graphemes = List.reduce((acc, span) =>
+        List.revAppend(Text.styledGraphemes(span, style), acc), acc, spans)
+      [newline, ...graphemes]
+    }, [], paragraph.text)
+  )
+
+  let lineComposer = match (paragraph.wrap) {
+    Some({ trim }) => {
+      WordWrapper.lineComposer(WordWrapper.new(styled, textArea.width, trim))
+    },
+    None => {
+      fail "NYI: truncating paragraphs"
+    },
+  }
+  let mut y = 0uS
+  let mut i = 0uS
+  while (true) {
+    match (lineComposer.next()) {
+      Some((currentLine, currentLineWidth)) => {
+        let (scroll, _) = paragraph.scroll
+        if (y >= scroll) {
+          let mut x = getLineOffset(
+            currentLineWidth,
+            textArea.width,
+            paragraph.alignment
+          )
+          let left = Rect.left(textArea)
+          let top = Rect.top(textArea)
+          let y = top + y - scroll
+          List.forEach(({ symbol, symbolStyle }) => {
+            let cell = Buffer.get(buf, left + x, y)
+            Cell.setSymbol(cell, symbol)
+            Cell.setStyle(cell, symbolStyle)
+            x += 1uS
+          }, currentLine)
+        }
+        y += 1uS
+        if (y >= textArea.height + scroll) {
+          break
+        }
+      },
+      None => break,
+    }
+  }
+
+  return
+}
+
+provide let renderer = paragraph => (area, buf) => render(paragraph, area, buf)

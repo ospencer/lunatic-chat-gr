@@ -1,0 +1,50 @@
+module Cursor
+
+include "List"
+
+include "./fmt"
+
+let createSequence = seq => {
+  let seq = "\x1B[" ++ seq
+  fmt => {
+    Fmt.write(fmt, seq)
+  }
+}
+
+provide let hide = createSequence("?25l")
+provide let show = createSequence("?25h")
+
+provide let restore = createSequence("u")
+provide let save = createSequence("s")
+
+provide let blinkingBlock = createSequence("\x31 q")
+provide let steadyBlock = createSequence("\x32 q")
+provide let blinkingUnderline = createSequence("\x33 q")
+provide let steadyUnderline = createSequence("\x34 q")
+provide let blinkingBar = createSequence("\x35 q")
+provide let steadyBar = createSequence("\x36 q")
+
+provide let goto = (fmt, x: Uint16, y: Uint16) => {
+  let sequence = ["\x1B[", toString(y), ";", toString(x), "H"]
+  Fmt.write(fmt, List.join(separator="", sequence))
+}
+
+provide let left = (fmt, amt: Uint16) => {
+  let sequence = ["\x1B[", toString(amt), "D"]
+  Fmt.write(fmt, List.join(separator="", sequence))
+}
+
+provide let right = (fmt, amt: Uint16) => {
+  let sequence = ["\x1B[", toString(amt), "C"]
+  Fmt.write(fmt, List.join(separator="", sequence))
+}
+
+provide let up = (fmt, amt: Uint16) => {
+  let sequence = ["\x1B[", toString(amt), "A"]
+  Fmt.write(fmt, List.join(separator="", sequence))
+}
+
+provide let down = (fmt, amt: Uint16) => {
+  let sequence = ["\x1B[", toString(amt), "B"]
+  Fmt.write(fmt, List.join(separator="", sequence))
+}

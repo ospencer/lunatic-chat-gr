@@ -1,0 +1,134 @@
+module Tabs
+
+include "char"
+include "list"
+include "uint16"
+
+include "./block"
+from Block use { type Block }
+include "../buffer"
+from Buffer use { Buffer, type Buffer }
+include "../layout"
+from Layout use { Rect, type Rect }
+include "../style"
+from Style use { type Style }
+include "../symbol"
+include "../text"
+from Text use { type Span, type Spans, type Text }
+
+abstract record Tabs {
+  /// A block to wrap this widget in if necessary
+  mut block: Option<Block>,
+  /// One title for each tab
+  mut titles: Text,
+  /// The index of the selected tabs
+  mut selected: Number,
+  /// The style used to draw the text
+  mut tabStyle: Style,
+  /// Style to apply to the selected item
+  mut highlightStyle: Style,
+  /// Tab divider
+  mut divider: Span,
+}
+
+provide module Tabs {
+  provide let new = (titles: Text) => {
+    {
+      block: None,
+      titles,
+      selected: 0,
+      tabStyle: Style.defaultStyle(),
+      highlightStyle: Style.defaultStyle(),
+      divider: Text.rawSpan(Char.toString(Symbol.Line._VERTICAL)),
+    }
+  }
+
+  provide let block = (tabs, block: Block) => {
+    tabs.block = Some(block)
+    tabs
+  }
+
+  provide let select = (tabs, selected: Number) => {
+    tabs.selected = selected
+    tabs
+  }
+
+  provide let style = (tabs, style: Style) => {
+    tabs.tabStyle = style
+    tabs
+  }
+
+  provide let highlightStyle = (tabs, style: Style) => {
+    tabs.highlightStyle = style
+    tabs
+  }
+
+  provide let divider = (tabs, divider: Span) => {
+    tabs.divider = divider
+    tabs
+  }
+}
+
+let saturatingAdd = (x, y) => {
+  from Uint16 use { (+), (<) }
+  let sum = x + y
+  if (sum < x) 0xffffuS else sum
+}
+
+let saturatingSub = (x, y) => {
+  from Uint16 use { (-), (>) }
+  let diff = x - y
+  if (diff > x) 0x0uS else diff
+}
+
+provide let render = (tabs, area: Rect, buf: Buffer) => {
+  from Uint16 use { (<) }
+
+  Buffer.setStyle(buf, area, tabs.tabStyle)
+  let tabsArea = match (tabs.block) {
+    Some(b) => {
+      let innerArea = Block.inner(b, area)
+      Block.render(b, area, buf)
+      innerArea
+    },
+    None => area,
+  }
+
+  if (tabsArea.height < 1uS) {
+    return
+  }
+
+  let top = Rect.top(tabsArea)
+  let left = Rect.left(tabsArea)
+  let right = Rect.right(tabsArea)
+
+  let mut x = left
+  let titlesLength = List.length(tabs.titles)
+  List.forEachi((title, i) => {
+    let lastTitle = titlesLength - 1 == i
+    x = saturatingAdd(x, 1uS)
+    let remainingWidth = saturatingSub(right, x)
+    if (remainingWidth == 0uS) {
+      return
+    }
+    let (posX, _) = Buffer.setSpans(buf, x, top, title, remainingWidth)
+    if (i == tabs.selected) {
+      Buffer.setStyle(
+        buf,
+        { x, y: top, width: saturatingSub(posX, x), height: 1uS },
+        tabs.highlightStyle
+      )
+    }
+    x = saturatingAdd(posX, 1uS)
+    let remainingWidth = saturatingSub(right, x)
+    if (remainingWidth == 0uS || lastTitle) {
+      return
+    }
+    let (posX, _) = Buffer.setSpan(buf, x, top, tabs.divider, remainingWidth)
+    x = posX
+    return
+  }, tabs.titles)
+  return
+}
+
+provide let renderer = tabs => (area, buf) => render(tabs, area, buf)

@@ -1,0 +1,70 @@
+module Main
+
+include "result"
+include "sys/process" as WasmProcess
+
+include "lunatic"
+from Lunatic use { Net, Process }
+
+include "./client"
+include "./coordinator"
+
+record Config {
+  port: String,
+}
+
+primitive magic = "@magic"
+
+let loadConfig = () => {
+  let argv = WasmProcess.argv()
+  let port = match (WasmProcess.argv()) {
+    Ok([> _, port]) => port,
+    _ => "3434",
+  }
+  { port, }
+}
+
+@externalName("_start")
+provide let main = () => {
+  let config = loadConfig()
+
+  // Start up the coordinator
+  Result.expect(
+    "coordinator failed to start",
+    Process.spawn(Coordinator.coordinate)
+  )
+
+  // Bind to a socket to listen for incomming connections
+  let listener = Result.expect(
+    "failed to bind to tcp socket",
+    Net.Tcp.bind("0.0.0.0:" ++ config.port)
+  )
+  print("Started server on port " ++ config.port)
+
+  while (true) {
+    match (Net.Tcp.accept(listener)) {
+      Ok(stream) => {
+        // Start up a client process
+        let client = Result.expect(
+          "failed to start client process",
+          Process.spawn(() => {
+            let stream = Result.unwrap(Process.takeTcpStream())
+            Client.newClient(magic(stream))
+          })
+        )
+
+        Result.expect(
+          "failed to transfer stream",
+          Process.transferTcpStream(client, stream)
+        )
+
+        void
+      },
+      Err(e) => {
+        fail toString(e)
+      },
+    }
+  }
+}
+
+provide let __lunatic_bootstrap = Lunatic.Process.__lunatic_bootstrap

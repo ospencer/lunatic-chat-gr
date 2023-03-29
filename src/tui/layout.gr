@@ -1,0 +1,260 @@
+module Layout
+
+include "list"
+include "number"
+include "uint16"
+include "uint32"
+
+let min = (x, y) => {
+  from Uint16 use { (<=) }
+  if (x <= y) x else y
+}
+
+let max = (x, y) => {
+  from Uint16 use { (>=) }
+  if (x >= y) x else y
+}
+
+provide enum Corner {
+  TopLeft,
+  TopRight,
+  BottomRight,
+  BottomLeft,
+}
+
+provide enum Direction {
+  Horizontal,
+  Vertical,
+}
+
+provide enum Constraint {
+  Percentage(Uint16),
+  Ratio(Uint32, Uint32),
+  Length(Uint16),
+  Max(Uint16),
+  Min(Uint16),
+}
+
+provide let applyConstraint = (constraint, length) => {
+  from Uint16 use { (*), (/), (<=) }
+  match (constraint) {
+    Percentage(p) => length * p / 100uS,
+    Ratio(num, den) => {
+      from Uint32 use { (*), (/) }
+      let r = num * Uint32.fromNumber(Uint16.toNumber(length)) / den
+      Uint16.fromNumber(Uint32.toNumber(r))
+    },
+    Length(l) => min(length, l),
+    Max(m) => min(length, m),
+    Min(m) => max(length, m),
+  }
+}
+
+abstract record Margin {
+  mut vertical: Uint16,
+  mut horizontal: Uint16,
+}
+
+provide enum Alignment {
+  Left,
+  Center,
+  Right,
+}
+
+abstract record Layout {
+  mut direction: Direction,
+  mut margin: Margin,
+  mut constraints: List<Constraint>,
+  /// Whether the last chunk of the computed layout should be expanded to fill the available
+  /// space.
+  mut expandToFill: Bool,
+}
+
+provide let default = () =>
+  {
+    direction: Vertical,
+    margin: { horizontal: 0uS, vertical: 0uS },
+    constraints: [],
+    expandToFill: true,
+  }
+
+provide let constraints = (layout, constraints) => {
+  layout.constraints = constraints
+  layout
+}
+
+provide let margin = (layout, margin) => {
+  layout.margin = { horizontal: margin, vertical: margin }
+  layout
+}
+
+provide let horizontalMargin = (layout, horizontal) => {
+  layout.margin.horizontal = horizontal
+  layout
+}
+
+provide let verticalMargin = (layout, vertical) => {
+  layout.margin.vertical = vertical
+  layout
+}
+
+provide let direction = (layout, direction) => {
+  layout.direction = direction
+  layout
+}
+
+provide let expandToFill = (layout, expandToFill) => {
+  layout.expandToFill = expandToFill
+  layout
+}
+
+provide record Rect {
+  mut x: Uint16,
+  mut y: Uint16,
+  mut width: Uint16,
+  mut height: Uint16,
+}
+
+provide module Rect {
+  /// Creates a new rect, with width and height limited to keep the area under max u16.
+  /// If clipped, aspect ratio will be preserved.
+  provide let new = (x, y, width, height) => {
+    let maxArea = 0xfffful
+    let (clippedWidth, clippedHeight) = {
+      from Uint32 use { (*), (>) }
+      if (
+        Uint32.fromNumber(Uint16.toNumber(width)) *
+        Uint32.fromNumber(Uint16.toNumber(height)) >
+        maxArea
+      ) {
+        from Number use { (*), sqrt, floor }
+        let aspectRatio = Uint16.toNumber(width) / Uint16.toNumber(height)
+        let maxAreaF = Uint32.toNumber(maxArea)
+        let heightF = sqrt(maxAreaF / aspectRatio)
+        let widthF = heightF * aspectRatio
+        (Uint16.fromNumber(floor(widthF)), Uint16.fromNumber(floor(heightF)))
+      } else {
+        (width, height)
+      }
+    }
+    { x, y, width: clippedWidth, height: clippedHeight }
+  }
+
+  from Uint16 use { (+), (-), (*), (<), (>) }
+
+  provide let area = rect => {
+    rect.width * rect.height
+  }
+
+  provide let left = rect => {
+    rect.x
+  }
+
+  provide let right = rect => {
+    let addition = rect.x + rect.width
+    if (addition < rect.x) 0xffffuS else addition
+  }
+
+  provide let top = rect => {
+    rect.y
+  }
+
+  provide let bottom = rect => {
+    let addition = rect.y + rect.height
+    if (addition < rect.y) 0xffffuS else addition
+  }
+
+  provide let inner = (rect, margin) => {
+    if (
+      rect.width < 2uS * margin.horizontal ||
+      rect.height < 2uS * margin.vertical
+    ) {
+      { x: 0uS, y: 0uS, width: 0uS, height: 0uS }
+    } else {
+      {
+        x: rect.x + margin.horizontal,
+        y: rect.y + margin.vertical,
+        width: rect.width - 2uS * margin.horizontal,
+        height: rect.height - 2uS * margin.vertical,
+      }
+    }
+  }
+
+  provide let union = (rect, other) => {
+    let x1 = min(rect.x, other.x)
+    let y1 = min(rect.y, other.y)
+    let x2 = max(rect.x + rect.width, other.x + other.width)
+    let y2 = max(rect.y + rect.height, other.y + other.height)
+    { x: x1, y: y1, width: x2 - x1, height: y2 - y1 }
+  }
+
+  provide let intersection = (rect, other) => {
+    let x1 = max(rect.x, other.x)
+    let y1 = max(rect.y, other.y)
+    let x2 = min(rect.x + rect.width, other.x + other.width)
+    let y2 = min(rect.y + rect.height, other.y + other.height)
+    { x: x1, y: y1, width: x2 - x1, height: y2 - y1 }
+  }
+
+  provide let intersects = (rect, other) => {
+    rect.x < other.x + other.width &&
+      rect.x + rect.width > other.x &&
+      rect.y < other.y + other.height &&
+      rect.y + rect.height > other.y
+  }
+}
+
+// TODO: use Cassowary solver
+provide let split = (layout, area) => {
+  from Uint16 use { (+), (*), (/) }
+
+  let destArea = Rect.inner(area, layout.margin)
+  match (layout.direction) {
+    Vertical => {
+      let numElements = List.length(layout.constraints)
+      let mut areaUsed = 0uS
+      List.mapi((constraint, i) => {
+        match (constraint) {
+          Percentage(p) => {
+            let mut amount = destArea.height * p / 100uS
+
+            if (i == numElements - 1) {
+              from Uint16 use { (-) }
+              // Add in any extra space to the last element
+              amount += destArea.height - (areaUsed + amount)
+            }
+
+            let rect = { ...destArea, y: destArea.y + areaUsed, height: amount }
+            areaUsed += amount
+
+            rect
+          },
+          _ => fail "NYI: only percentages are supported",
+        }
+      }, layout.constraints)
+    },
+    Horizontal => {
+      let numElements = List.length(layout.constraints)
+      let mut areaUsed = 0uS
+      List.mapi((constraint, i) => {
+        match (constraint) {
+          Percentage(p) => {
+            let mut amount = destArea.width * p / 100uS
+
+            if (i == numElements - 1) {
+              from Uint16 use { (-) }
+              // Add in any extra space to the last element
+              amount += destArea.width - (areaUsed + amount)
+            }
+
+            let rect = { ...destArea, x: destArea.x + areaUsed, width: amount }
+            areaUsed += amount
+
+            rect
+          },
+          _ => fail "NYI: only percentages are supported",
+        }
+      }, layout.constraints)
+    },
+  }
+}

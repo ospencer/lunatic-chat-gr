@@ -1,0 +1,264 @@
+module Block
+
+include "option"
+include "uint8"
+include "uint16"
+
+include "./borders"
+from Borders use { type Borders }
+include "../buffer"
+from Buffer use { Buffer, type Buffer, Cell, type Cell }
+include "../layout"
+from Layout use { type Alignment, type Rect, Rect }
+include "../style"
+from Style use { type Style }
+include "../symbol"
+include "../text"
+from Text use { type Spans }
+
+provide enum BorderType {
+  Plain,
+  Rounded,
+  Double,
+  Thick,
+}
+
+provide let lineSymbols = (borderType: BorderType) => {
+  match (borderType) {
+    Plain => Symbol.Line._NORMAL,
+    Rounded => Symbol.Line._ROUNDED,
+    Double => Symbol.Line._DOUBLE,
+    Thick => Symbol.Line._THICK,
+  }
+}
+
+abstract record Block {
+  /// Optional title place on the upper left of the block
+  mut title: Option<Spans>,
+  /// Title alignment. The default is top left of the block, but one can choose to place
+  /// title in the top middle, or top right of the block
+  mut titleAlignment: Alignment,
+  /// Visible borders
+  mut borders: Borders,
+  /// Border style
+  mut borderStyle: Style,
+  /// Type of the border. The default is plain lines but one can choose to have rounded corners
+  /// or doubled lines instead.
+  mut borderType: BorderType,
+  /// Widget style
+  mut style: Style,
+}
+
+provide let default = () => {
+  {
+    title: None,
+    titleAlignment: Left,
+    borders: Borders._NONE,
+    borderStyle: Style.defaultStyle(),
+    borderType: Plain,
+    style: Style.defaultStyle(),
+  }
+}
+
+provide let title = (block, title) => {
+  block.title = Some(title)
+  block
+}
+
+provide let titleAlignment = (block, alignment: Alignment) => {
+  block.titleAlignment = alignment
+  block
+}
+
+provide let borderStyle = (block, style: Style) => {
+  block.borderStyle = style
+  block
+}
+
+provide let style = (block, style: Style) => {
+  block.style = style
+  block
+}
+
+provide let borders = (block, flag: Borders) => {
+  block.borders = flag
+  block
+}
+
+provide let borderType = (block, borderType: BorderType) => {
+  block.borderType = borderType
+  block
+}
+
+let intersects = (x, y) => {
+  from Uint16 use { (&), (>) }
+  (x & y) > 0uS
+}
+
+let contains = (x, y) => {
+  from Uint16 use { (&), (==) }
+  (x & y) == y
+}
+
+let saturatingAdd = (x, y) => {
+  from Uint16 use { (+), (<) }
+  let sum = x + y
+  if (sum < x) 0xffffuS else sum
+}
+
+let saturatingSub = (x, y) => {
+  from Uint16 use { (-), (>) }
+  let diff = x - y
+  if (diff > x) 0x0uS else diff
+}
+
+let min = (x, y) => {
+  from Uint16 use { (<=) }
+  if (x <= y) x else y
+}
+
+/// Compute the inner area of a block based on its border visibility rules.
+provide let inner = (block, area: Rect) => {
+  let inner = { x: area.x, y: area.y, width: area.width, height: area.height }
+  if (intersects(block.borders, Borders._LEFT)) {
+    inner.x = min(saturatingAdd(inner.x, 1uS), Rect.right(inner))
+    inner.width = saturatingSub(inner.width, 1uS)
+  }
+  if (intersects(block.borders, Borders._TOP) || Option.isSome(block.title)) {
+    inner.y = min(saturatingAdd(inner.y, 1uS), Rect.bottom(inner))
+    inner.height = saturatingSub(inner.height, 1uS)
+  }
+  if (intersects(block.borders, Borders._RIGHT)) {
+    inner.width = saturatingSub(inner.width, 1uS)
+  }
+  if (intersects(block.borders, Borders._BOTTOM)) {
+    inner.height = saturatingSub(inner.height, 1uS)
+  }
+  inner
+}
+
+provide let render = (block, area: Rect, buf: Buffer) => {
+  from Uint16 use { (+), (-), (/), (<), (|) }
+
+  if (Rect.area(area) == 0uS) {
+    return
+  }
+  Buffer.setStyle(buf, area, block.style)
+  let symbols = lineSymbols(block.borderType)
+
+  let top = Rect.top(area)
+  let bottom = Rect.bottom(area)
+  let left = Rect.left(area)
+  let right = Rect.right(area)
+
+  // Sides
+  if (intersects(block.borders, Borders._LEFT)) {
+    for (let mut y = top; y < bottom; y += 1uS) {
+      let cell = Buffer.get(buf, left, y)
+      Cell.setSymbol(cell, symbols.vertical)
+      Cell.setStyle(cell, block.borderStyle)
+      void
+    }
+  }
+  if (intersects(block.borders, Borders._TOP)) {
+    for (let mut x = left; x < right; x += 1uS) {
+      let cell = Buffer.get(buf, x, top)
+      Cell.setSymbol(cell, symbols.horizontal)
+      Cell.setStyle(cell, block.borderStyle)
+      void
+    }
+  }
+  if (intersects(block.borders, Borders._RIGHT)) {
+    let x = right - 1uS
+    for (let mut y = top; y < bottom; y += 1uS) {
+      let cell = Buffer.get(buf, x, y)
+      Cell.setSymbol(cell, symbols.vertical)
+      Cell.setStyle(cell, block.borderStyle)
+      void
+    }
+  }
+  if (intersects(block.borders, Borders._BOTTOM)) {
+    let y = bottom - 1uS
+    for (let mut x = left; x < right; x += 1uS) {
+      let cell = Buffer.get(buf, x, y)
+      Cell.setSymbol(cell, symbols.horizontal)
+      Cell.setStyle(cell, block.borderStyle)
+      void
+    }
+  }
+
+  // Corners
+  if (contains(block.borders, Borders._RIGHT | Borders._BOTTOM)) {
+    let cell = Buffer.get(buf, right - 1uS, bottom - 1uS)
+    Cell.setSymbol(cell, symbols.bottomRight)
+    Cell.setStyle(cell, block.borderStyle)
+    void
+  }
+  if (contains(block.borders, Borders._RIGHT | Borders._TOP)) {
+    let cell = Buffer.get(buf, right - 1uS, top)
+    Cell.setSymbol(cell, symbols.topRight)
+    Cell.setStyle(cell, block.borderStyle)
+    void
+  }
+  if (contains(block.borders, Borders._LEFT | Borders._BOTTOM)) {
+    let cell = Buffer.get(buf, left, bottom - 1uS)
+    Cell.setSymbol(cell, symbols.bottomLeft)
+    Cell.setStyle(cell, block.borderStyle)
+    void
+  }
+  if (contains(block.borders, Borders._LEFT | Borders._TOP)) {
+    let cell = Buffer.get(buf, left, top)
+    Cell.setSymbol(cell, symbols.topLeft)
+    Cell.setStyle(cell, block.borderStyle)
+    void
+  }
+
+  // Title
+  match (block.title) {
+    Some(title) => {
+      let leftBorderDx = if (intersects(block.borders, Borders._LEFT)) {
+        1uS
+      } else {
+        0uS
+      }
+
+      let rightBorderDx = if (intersects(block.borders, Borders._RIGHT)) {
+        1uS
+      } else {
+        0uS
+      }
+
+      let titleAreaWidth = saturatingSub(
+        saturatingSub(area.width, leftBorderDx),
+        rightBorderDx
+      )
+
+      let titleDx = match (block.titleAlignment) {
+        Left => leftBorderDx,
+        Center =>
+          saturatingSub(area.width, Uint16.fromNumber(Text.spansWidth(title))) /
+            2uS,
+        Right =>
+          saturatingSub(
+            saturatingSub(
+              area.width,
+              Uint16.fromNumber(Text.spansWidth(title))
+            ),
+            rightBorderDx
+          ),
+      }
+
+      let titleX = left + titleDx
+      let titleY = top
+
+      Buffer.setSpans(buf, titleX, titleY, title, titleAreaWidth)
+
+      void
+    },
+    None => void,
+  }
+
+  return
+}
+
+provide let renderer = block => (area, buf) => render(block, area, buf)
