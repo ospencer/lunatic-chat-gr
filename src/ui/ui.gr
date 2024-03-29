@@ -1,36 +1,36 @@
 module Ui
 
-include "buffer"
-include "char"
-include "int16"
-include "option"
-include "list"
-include "result"
-include "string"
-include "uint16"
+from "buffer" include Buffer
+from "char" include Char
+from "int16" include Int16
+from "option" include Option
+from "list" include List
+from "result" include Result
+from "string" include String
+from "uint16" include Uint16
 
-include "lunatic"
-from Lunatic.Net.Tcp use { type TcpStream }
+from "lunatic" include Lunatic
+use Lunatic.Net.Tcp.{ type TcpStream }
 
-include "../channel"
-include "../process" as ChatProcess
-from ChatProcess use { type ChannelProcess }
+from "../channel.gr" include Channel
+from "../process.gr" include Process as ChatProcess
+use ChatProcess.{ type ChannelProcess }
 
-include "../tui/layout"
-from Layout use { type Constraint, type Rect }
-include "../tui/style"
-from Style use { type Color, Modifier }
-include "../tui/symbol"
-include "../tui/terminal"
-from Terminal use { Frame, type Frame, Terminal, type Terminal }
-include "../tui/text"
-include "../tui/widgets"
-from Widgets use { Block, Borders, Paragraph }
-from Widgets.Tabs use { renderer as tabsRenderer, Tabs }
-from Borders use { type Borders }
+from "../tui/layout.gr" include Layout
+use Layout.{ type Constraint, type Rect }
+from "../tui/style.gr" include Style
+use Style.{ type Color, module Modifier }
+from "../tui/symbol.gr" include Symbol
+from "../tui/terminal.gr" include Terminal
+use Terminal.{ module Frame, type Frame, module Terminal, type Terminal }
+from "../tui/text.gr" include Text
+from "../tui/widgets.gr" include Widgets
+use Widgets.{ module Block, module Borders, module Paragraph }
+use Widgets.Tabs.{ renderer as tabsRenderer, module Tabs }
+use Borders.{ type Borders }
 
-include "./telnetBackend"
-from TelnetBackend use { type WindowSize }
+from "./telnetBackend.gr" include TelnetBackend
+use TelnetBackend.{ type WindowSize }
 
 primitive magic = "@magic"
 
@@ -50,12 +50,11 @@ abstract record Tab {
 }
 
 provide module Tab {
-  provide let new =
-    (
-      name: String,
-      notifier: Option<ChannelProcess>,
-      tabType: TabType,
-    ) => {
+  provide let new = (
+    name: String,
+    notifier: Option<ChannelProcess>,
+    tabType: TabType,
+  ) => {
     { name, tabType, notifier, input: Buffer.make(512) }
   }
 
@@ -159,13 +158,12 @@ provide module UiTabs {
     return
   }
 
-  provide let addMessage =
-    (
-      tabs,
-      channel: String,
-      user: String,
-      message: String,
-    ) => {
+  provide let addMessage = (
+    tabs,
+    channel: String,
+    user: String,
+    message: String,
+  ) => {
     let tab = Option.unwrap(List.find(tab => tab.name == channel, tabs.tabs))
     match (tab.tabType) {
       Channel(content) => {
@@ -208,12 +206,11 @@ abstract record Ui {
 }
 
 provide module Ui {
-  provide let new =
-    (
-      tcpStream: TcpStream,
-      windowSize: WindowSize,
-      terminalTabs: UiTabs,
-    ) => {
+  provide let new = (
+    tcpStream: TcpStream,
+    windowSize: WindowSize,
+    terminalTabs: UiTabs,
+  ) => {
     let backend = TelnetBackend.new(tcpStream, windowSize)
     let terminal = Result.unwrap(Terminal.new(backend))
     { terminal, terminalTabs }
@@ -247,7 +244,7 @@ provide module Ui {
   }
 
   let renderChannel = (frame, content: List<(String, String)>, area: Rect) => {
-    from Int16 use { (+), (-), (/), (<) }
+    use Int16.{ (+), (-), (/), (<) }
 
     // +2 to calculate borders
     let mut verticalSpaceUsed = 2S
@@ -317,7 +314,7 @@ provide module Ui {
   }
 
   provide let render = (ui: Ui) => {
-    from Uint16 use { (<) }
+    use Uint16.{ (<) }
 
     let tabs = UiTabs.widget(ui.terminalTabs)
     let selectedTab = UiTabs.getSelected(ui.terminalTabs)

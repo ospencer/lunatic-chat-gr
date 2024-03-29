@@ -1,23 +1,23 @@
 module TelnetBackend
 
-include "buffer"
-include "char"
-include "list"
-include "uint16"
+from "buffer" include Buffer
+from "char" include Char
+from "list" include List
+from "uint16" include Uint16
 
-include "lunatic"
-from Lunatic use { Net }
+from "lunatic" include Lunatic
+use Lunatic.{ module Net }
 
-include "../tui/backend"
-from Backend use { type Backend }
-include "../tui/buffer" as TuiBuffer
-from TuiBuffer use { Cell, type Cell }
-include "../tui/layout"
-include "../tui/style"
-from Style use { type Color, Modifier, type Modifier }
+from "../tui/backend.gr" include Backend
+use Backend.{ type Backend }
+from "../tui/buffer.gr" include Buffer as TuiBuffer
+use TuiBuffer.{ module Cell, type Cell }
+from "../tui/layout.gr" include Layout
+from "../tui/style.gr" include Style
+use Style.{ type Color, module Modifier, type Modifier }
 
-include "../termite"
-from Termite use { Fmt }
+from "../termite.gr" include Termite
+use Termite.{ module Fmt }
 
 primitive magic = "@magic"
 
@@ -82,7 +82,7 @@ let applyBg = (fmt, bg) => {
 }
 
 let applyModifierDiff = (fmt, modifier) => {
-  from Uint16 use { (-), (&), lnot }
+  use Uint16.{ (-), (&), lnot }
   let remove = modifier.old & lnot(modifier.new)
   let contains = (modifier, flag) => {
     (modifier & flag) == flag
@@ -145,7 +145,8 @@ let applyModifierDiff = (fmt, modifier) => {
     Termite.Style.crossedOut(fmt)
   }
   if (
-    contains(add, Modifier._SLOW_BLINK) || contains(add, Modifier._RAPID_BLINK)
+    contains(add, Modifier._SLOW_BLINK) ||
+    contains(add, Modifier._RAPID_BLINK)
   ) {
     Termite.Style.blink(fmt)
   }
@@ -165,7 +166,7 @@ provide let new = (tcpStream, windowSize) => {
     let mut modifier = Modifier._EMPTY
     let mut lastPos = None
     List.forEach(((x, y, cell)) => {
-      from Uint16 use { (+) }
+      use Uint16.{ (+) }
       // Move the cursor if the previous location was not (x - 1, y)
       match (lastPos) {
         Some((xLast, yLast)) when x == xLast + 1uS && y == yLast => void,
@@ -215,7 +216,7 @@ provide let new = (tcpStream, windowSize) => {
   }
 
   let setCursor = (backend, x, y) => {
-    from Uint16 use { (+) }
+    use Uint16.{ (+) }
     Termite.Cursor.goto(fmt, x + 1uS, y + 1uS)
     Net.Tcp.flush(tcpStream)
     Ok(void)

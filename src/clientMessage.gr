@@ -1,13 +1,13 @@
 module ClientMessage
 
-include "lunatic"
+from "lunatic" include Lunatic
 
-include "./telnet"
+from "./telnet.gr" include Telnet
 
 provide enum ClientMessage {
   Telnet(Telnet.TelnetMessage),
   Client(String, String, String),
 }
 
-provide let clientMessageMailbox: Lunatic.Process.Mailbox<ClientMessage
-> = Lunatic.Process.createMailbox()
+provide let clientMessageMailbox: Lunatic.Process.Mailbox<ClientMessage> =
+  Lunatic.Process.createMailbox()

@@ -1,12 +1,12 @@
 module Text
 
-include "array"
-include "char"
-include "list"
-include "number"
-include "string"
+from "array" include Array
+from "char" include Char
+from "list" include List
+from "number" include Number
+from "string" include String
 
-include "./style"
+from "./style.gr" include Style
 
 provide record StyledGrapheme {
   symbol: Char,

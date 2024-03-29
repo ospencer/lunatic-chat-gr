@@ -6,11 +6,9 @@ This is a port of https://github.com/lunatic-solutions/chat, with src/termite be
 
 Using Lunatic processes, telnet commands are converted from raw bytes to nice data types, which are then processed and user to render the UI.
 
-This was built using a preview version of the upcoming Grain v0.6 release—there are bugs and some things may still change before the official release!
-
 ## Building and running
 
-You'll need a preview version of Grain v0.6, which you can obtain [from the Grain website](https://grain-lang.org/docs/getting_grain#Previews) or by [building Grain from source](https://grain-lang.org/docs/getting_grain#Building-Grain-from-Source).
+You'll need Grain v0.6, which you can obtain [from the Grain website](https://grain-lang.org/docs/getting_grain) or by [building Grain from source](https://grain-lang.org/docs/getting_grain#Building-Grain-from-Source).
 
 In a directory next to the directory where you've cloned this chat, clone https://github.com/grain-lang/lunatic-gr.
 

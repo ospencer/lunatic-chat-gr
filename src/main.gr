@@ -1,13 +1,13 @@
 module Main
 
-include "result"
-include "sys/process" as WasmProcess
+from "result" include Result
+from "wasi/process" include Process as WasmProcess
 
-include "lunatic"
-from Lunatic use { Net, Process }
+from "lunatic" include Lunatic
+use Lunatic.{ module Net, module Process }
 
-include "./client"
-include "./coordinator"
+from "./client.gr" include Client
+from "./coordinator.gr" include Coordinator
 
 record Config {
   port: String,

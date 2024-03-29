@@ -1,20 +1,20 @@
 module Block
 
-include "option"
-include "uint8"
-include "uint16"
+from "option" include Option
+from "uint8" include Uint8
+from "uint16" include Uint16
 
-include "./borders"
-from Borders use { type Borders }
-include "../buffer"
-from Buffer use { Buffer, type Buffer, Cell, type Cell }
-include "../layout"
-from Layout use { type Alignment, type Rect, Rect }
-include "../style"
-from Style use { type Style }
-include "../symbol"
-include "../text"
-from Text use { type Spans }
+from "./borders.gr" include Borders
+use Borders.{ type Borders }
+from "../buffer.gr" include Buffer
+use Buffer.{ module Buffer, type Buffer, module Cell, type Cell }
+from "../layout.gr" include Layout
+use Layout.{ type Alignment, type Rect, module Rect }
+from "../style.gr" include Style
+use Style.{ type Style }
+from "../symbol.gr" include Symbol
+from "../text.gr" include Text
+use Text.{ type Spans }
 
 provide enum BorderType {
   Plain,
@@ -91,29 +91,29 @@ provide let borderType = (block, borderType: BorderType) => {
 }
 
 let intersects = (x, y) => {
-  from Uint16 use { (&), (>) }
+  use Uint16.{ (&), (>) }
   (x & y) > 0uS
 }
 
 let contains = (x, y) => {
-  from Uint16 use { (&), (==) }
+  use Uint16.{ (&), (==) }
   (x & y) == y
 }
 
 let saturatingAdd = (x, y) => {
-  from Uint16 use { (+), (<) }
+  use Uint16.{ (+), (<) }
   let sum = x + y
   if (sum < x) 0xffffuS else sum
 }
 
 let saturatingSub = (x, y) => {
-  from Uint16 use { (-), (>) }
+  use Uint16.{ (-), (>) }
   let diff = x - y
   if (diff > x) 0x0uS else diff
 }
 
 let min = (x, y) => {
-  from Uint16 use { (<=) }
+  use Uint16.{ (<=) }
   if (x <= y) x else y
 }
 
@@ -138,7 +138,7 @@ provide let inner = (block, area: Rect) => {
 }
 
 provide let render = (block, area: Rect, buf: Buffer) => {
-  from Uint16 use { (+), (-), (/), (<), (|) }
+  use Uint16.{ (+), (-), (/), (<), (|) }
 
   if (Rect.area(area) == 0uS) {
     return
@@ -240,10 +240,7 @@ provide let render = (block, area: Rect, buf: Buffer) => {
             2uS,
         Right =>
           saturatingSub(
-            saturatingSub(
-              area.width,
-              Uint16.fromNumber(Text.spansWidth(title))
-            ),
+            saturatingSub(area.width, Uint16.fromNumber(Text.spansWidth(title))),
             rightBorderDx
           ),
       }

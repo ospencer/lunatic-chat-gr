@@ -1,37 +1,36 @@
 module Paragraph
 
-include "array"
-include "list"
-include "option"
-include "string"
-include "uint16"
+from "array" include Array
+from "list" include List
+from "option" include Option
+from "string" include String
+from "uint16" include Uint16
 
-include "./block"
-from Block use { type Block }
-include "../buffer"
-from Buffer use { Buffer, type Buffer, Cell, type Cell }
-include "../layout"
-from Layout use { type Alignment, Rect, type Rect }
-include "./reflow"
-from Reflow use { WordWrapper }
-include "../style"
-from Style use { type Style }
-include "../text"
-from Text use { type StyledGrapheme, type Text }
+from "./block.gr" include Block
+use Block.{ type Block }
+from "../buffer.gr" include Buffer
+use Buffer.{ module Buffer, type Buffer, module Cell, type Cell }
+from "../layout.gr" include Layout
+use Layout.{ type Alignment, module Rect, type Rect }
+from "./reflow.gr" include Reflow
+use Reflow.{ module WordWrapper }
+from "../style.gr" include Style
+use Style.{ type Style }
+from "../text.gr" include Text
+use Text.{ type StyledGrapheme, type Text }
 
 let saturatingSub = (x, y) => {
-  from Uint16 use { (-), (>) }
+  use Uint16.{ (-), (>) }
   let diff = x - y
   if (diff > x) 0x0uS else diff
 }
 
-let getLineOffset =
-  (
-    lineWidth: Uint16,
-    textAreaWidth: Uint16,
-    alignment: Alignment,
-  ) => {
-  from Uint16 use { (/) }
+let getLineOffset = (
+  lineWidth: Uint16,
+  textAreaWidth: Uint16,
+  alignment: Alignment,
+) => {
+  use Uint16.{ (/) }
   match (alignment) {
     Center => saturatingSub(textAreaWidth / 2uS, lineWidth / 2uS),
     Right => saturatingSub(textAreaWidth, lineWidth),
@@ -54,10 +53,7 @@ abstract record Paragraph {
   /// The text to display
   mut text: Text,
   /// Scroll
-  mut scroll: (
-    Uint16,
-    Uint16
-  ),
+  mut scroll: (Uint16, Uint16),
   /// Alignment of the text
   mut alignment: Alignment,
 }
@@ -99,7 +95,7 @@ provide let alignment = (paragraph, alignment: Alignment) => {
 }
 
 provide let render = (paragraph, area: Rect, buf: Buffer) => {
-  from Uint16 use { (+), (-), (<), (>=) }
+  use Uint16.{ (+), (-), (<), (>=) }
 
   Buffer.setStyle(buf, area, paragraph.style)
   let textArea = match (paragraph.block) {
@@ -117,13 +113,14 @@ provide let render = (paragraph, area: Rect, buf: Buffer) => {
 
   let style = paragraph.style
   let newline = { symbol: '\n', symbolStyle: style }
-  let styled = List.reverse(
-    List.reduce((acc, spans) => {
-      let graphemes = List.reduce((acc, span) =>
-        List.revAppend(Text.styledGraphemes(span, style), acc), acc, spans)
-      [newline, ...graphemes]
-    }, [], paragraph.text)
-  )
+  let styled = List.reverse(List.reduce((acc, spans) => {
+    let graphemes = List.reduce(
+      (acc, span) => List.revAppend(Text.styledGraphemes(span, style), acc),
+      acc,
+      spans
+    )
+    [newline, ...graphemes]
+  }, [], paragraph.text))
 
   let lineComposer = match (paragraph.wrap) {
     Some({ trim }) => {

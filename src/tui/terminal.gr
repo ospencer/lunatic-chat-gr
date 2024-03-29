@@ -1,15 +1,15 @@
 module Terminal
 
-include "result"
+from "result" include Result
 
-include "./backend"
-from Backend use { type Backend }
-include "./buffer"
-from Buffer use { Buffer, type Buffer }
-include "./layout"
-from Layout use { type Rect }
-include "./widgets"
-from Widgets use { type Widget }
+from "./backend.gr" include Backend
+use Backend.{ type Backend }
+from "./buffer.gr" include Buffer
+use Buffer.{ module Buffer, type Buffer }
+from "./layout.gr" include Layout
+use Layout.{ type Rect }
+from "./widgets.gr" include Widgets
+use Widgets.{ type Widget }
 
 provide enum ResizeBehavior {
   Fixed,
@@ -59,7 +59,7 @@ provide module Terminal {
         current: 0,
         hiddenCursor: false,
         viewport,
-      }
+      },
     )
   }
 
@@ -181,7 +181,7 @@ provide module Terminal {
       {
         buffer: terminal.buffers[1 - terminal.current],
         area: terminal.viewport.area,
-      }
+      },
     )
   }
 }

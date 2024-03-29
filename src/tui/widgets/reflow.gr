@@ -1,12 +1,12 @@
 module Reflow
 
-include "array"
-include "list"
-include "string"
-include "uint16"
+from "array" include Array
+from "list" include List
+from "string" include String
+from "uint16" include Uint16
 
-include "../text"
-from Text use { type StyledGrapheme }
+from "../text.gr" include Text
+use Text.{ type StyledGrapheme }
 
 let _NBSP = '\u{00a0}'
 
@@ -57,7 +57,7 @@ provide module WordWrapper {
         [{ symbol, symbolStyle }, ...rest] => {
           wordWrapper.symbols = rest
 
-          from Uint16 use { (+), (>) }
+          use Uint16.{ (+), (>) }
 
           symbolsExhausted = false
           let symbolWhitespace = symbol == ' ' && symbol != _NBSP

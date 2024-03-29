@@ -1,12 +1,12 @@
 module Widgets
 
-include "./buffer"
-include "./layout"
+from "./buffer.gr" include Buffer
+from "./layout.gr" include Layout
 
-include "./widgets/block"
-include "./widgets/borders"
-include "./widgets/paragraph"
-include "./widgets/tabs"
+from "./widgets/block.gr" include Block
+from "./widgets/borders.gr" include Borders
+from "./widgets/paragraph.gr" include Paragraph
+from "./widgets/tabs.gr" include Tabs
 
-provide type Widget = (Layout.Rect, Buffer.Buffer) -> Void
-provide { Block, Borders, Paragraph, Tabs }
+provide type Widget = (Layout.Rect, Buffer.Buffer) => Void
+provide { module Block, module Borders, module Paragraph, module Tabs }
