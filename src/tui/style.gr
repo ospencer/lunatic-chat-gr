@@ -1,7 +1,7 @@
 module Style
 
-include "option"
-include "uint16"
+from "option" include Option
+from "uint16" include Uint16
 
 provide enum Color {
   Reset,
@@ -39,17 +39,13 @@ provide module Modifier {
   provide let _HIDDEN: Modifier = 0b0000_1000_0000uS
   provide let _CROSSED_OUT: Modifier = 0b0001_0000_0000uS
 
-  provide let insert: (Modifier, Modifier) -> Modifier = (modifier, toAdd) => {
-    from Uint16 use { (|) }
+  provide let insert: (Modifier, Modifier) => Modifier = (modifier, toAdd) => {
+    use Uint16.{ (|) }
     modifier | toAdd
   }
 
-  provide let remove: (Modifier, Modifier) -> Modifier =
-    (
-      modifier,
-      toRemove,
-    ) => {
-    from Uint16 use { (&), lnot }
+  provide let remove: (Modifier, Modifier) => Modifier = (modifier, toRemove) => {
+    use Uint16.{ (&), lnot }
     modifier & lnot(toRemove)
   }
 }
@@ -62,20 +58,10 @@ provide record Style {
 }
 
 provide let defaultStyle = () =>
-  {
-    fg: None,
-    bg: None,
-    addModifier: 0uS,
-    subModifier: 0uS,
-  }
+  { fg: None, bg: None, addModifier: 0uS, subModifier: 0uS }
 
 provide let reset = () =>
-  {
-    fg: Some(Reset),
-    bg: Some(Reset),
-    addModifier: 0uS,
-    subModifier: 0xffffuS,
-  }
+  { fg: Some(Reset), bg: Some(Reset), addModifier: 0uS, subModifier: 0xffffuS }
 
 provide let clone = style =>
   {
@@ -108,8 +94,9 @@ provide let removeModifier = (style, modifier) => {
 }
 
 provide let patch = (style, other) => {
-  style.fg = Option.or(other.fg, style.fg)
-  style.bg = Option.or(other.bg, style.bg)
+  use Option.{ (||) }
+  style.fg = other.fg || style.fg
+  style.bg = other.bg || style.bg
 
   style.addModifier = Modifier.remove(style.addModifier, other.subModifier)
   style.addModifier = Modifier.insert(style.addModifier, other.addModifier)

@@ -2,8 +2,8 @@ module Borders
 
 provide type Borders = Uint16
 
-include "uint16"
-from Uint16 use { (|) }
+from "uint16" include Uint16
+use Uint16.{ (|) }
 
 /// Show no border (default)
 provide let _NONE = 0b0000_0001uS

@@ -1,11 +1,11 @@
 module Telnet
 
-include "bytes"
-include "result"
-include "uint16"
+from "bytes" include Bytes
+from "result" include Result
+from "uint16" include Uint16
 
-include "lunatic"
-from Lunatic use { Net }
+from "lunatic" include Lunatic
+use Lunatic.{ module Net }
 
 abstract record Telnet {
   stream: Net.Tcp.TcpStream,
@@ -68,7 +68,7 @@ provide let make = stream => {
 
 // Get next message from client
 provide let next = telnet => {
-  from Net use { Tcp }
+  use Net.{ module Tcp }
   // If we reached the end of the buffer read more from tcp stream
   if (telnet.start == telnet.end) {
     match (Tcp.read(telnet.stream, telnet.buffer)) {
@@ -172,7 +172,7 @@ provide let next = telnet => {
                 let height = Bytes.getUint16(telnet.start + 2, telnet.buffer)
 
                 // These two values are BE but wasm is LE
-                from Uint16 use { (<<), (>>>), (|) }
+                use Uint16.{ (<<), (>>>), (|) }
                 let width = width >>> 8uS | width << 8uS
                 let height = height >>> 8uS | height << 8uS
 
@@ -202,7 +202,7 @@ provide let next = telnet => {
                 let height = Bytes.getUint16(2, bytes)
 
                 // These two values are BE but wasm is LE
-                from Uint16 use { (<<), (>>>), (|) }
+                use Uint16.{ (<<), (>>>), (|) }
                 let width = width >>> 8uS | width << 8uS
                 let height = height >>> 8uS | height << 8uS
 
@@ -276,7 +276,7 @@ provide let next = telnet => {
 }
 
 provide let iacDoLinemode = telnet => {
-  from Net use { Tcp }
+  use Net.{ module Tcp }
 
   let buffer = Bytes.make(3)
   Bytes.setUint8(0, _IAC, buffer)
@@ -304,7 +304,7 @@ provide let iacDoLinemode = telnet => {
 
 // Tell the client not to do local editing
 provide let iacLinemodeZero = telnet => {
-  from Net use { Tcp }
+  use Net.{ module Tcp }
 
   let buffer = Bytes.make(7)
   Bytes.setUint8(0, _IAC, buffer)
@@ -325,7 +325,7 @@ provide let iacLinemodeZero = telnet => {
 
 // Tell the client to report window size changes
 provide let iacDoNaws = telnet => {
-  from Net use { Tcp }
+  use Net.{ module Tcp }
 
   let buffer = Bytes.make(3)
   Bytes.setUint8(0, _IAC, buffer)
@@ -353,7 +353,7 @@ provide let iacDoNaws = telnet => {
 
 // Tell the client that we will be doing the echoing
 provide let iacWillEcho = telnet => {
-  from Net use { Tcp }
+  use Net.{ module Tcp }
 
   let buffer = Bytes.make(3)
   Bytes.setUint8(0, _IAC, buffer)

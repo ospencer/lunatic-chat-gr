@@ -1,20 +1,20 @@
 module Tabs
 
-include "char"
-include "list"
-include "uint16"
+from "char" include Char
+from "list" include List
+from "uint16" include Uint16
 
-include "./block"
-from Block use { type Block }
-include "../buffer"
-from Buffer use { Buffer, type Buffer }
-include "../layout"
-from Layout use { Rect, type Rect }
-include "../style"
-from Style use { type Style }
-include "../symbol"
-include "../text"
-from Text use { type Span, type Spans, type Text }
+from "./block.gr" include Block
+use Block.{ type Block }
+from "../buffer.gr" include Buffer
+use Buffer.{ module Buffer, type Buffer }
+from "../layout.gr" include Layout
+use Layout.{ module Rect, type Rect }
+from "../style.gr" include Style
+use Style.{ type Style }
+from "../symbol.gr" include Symbol
+from "../text.gr" include Text
+use Text.{ type Span, type Spans, type Text }
 
 abstract record Tabs {
   /// A block to wrap this widget in if necessary
@@ -70,19 +70,19 @@ provide module Tabs {
 }
 
 let saturatingAdd = (x, y) => {
-  from Uint16 use { (+), (<) }
+  use Uint16.{ (+), (<) }
   let sum = x + y
   if (sum < x) 0xffffuS else sum
 }
 
 let saturatingSub = (x, y) => {
-  from Uint16 use { (-), (>) }
+  use Uint16.{ (-), (>) }
   let diff = x - y
   if (diff > x) 0x0uS else diff
 }
 
 provide let render = (tabs, area: Rect, buf: Buffer) => {
-  from Uint16 use { (<) }
+  use Uint16.{ (<) }
 
   Buffer.setStyle(buf, area, tabs.tabStyle)
   let tabsArea = match (tabs.block) {

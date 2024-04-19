@@ -1,16 +1,16 @@
 module Channel
 
-include "list"
-include "result"
-include "set"
+from "list" include List
+from "result" include Result
+from "set" include Set
 
-include "lunatic"
-from Lunatic use { Process }
+from "lunatic" include Lunatic
+use Lunatic.{ module Process }
 
-include "./clientMessage"
-from ClientMessage use { clientMessageMailbox, type ClientMessage }
-include "./process" as ChatProcess
-from ChatProcess use { type ChannelProcess, type ClientProcess }
+from "./clientMessage.gr" include ClientMessage
+use ClientMessage.{ clientMessageMailbox, type ClientMessage }
+from "./process.gr" include Process as ChatProcess
+use ChatProcess.{ type ChannelProcess, type ClientProcess }
 
 /// A channel dispatches messages to all clients that are part of it.
 ///
@@ -39,13 +39,12 @@ let actionMailbox = Process.createMailbox()
 let lastMessagesMailbox = Process.createMailbox()
 
 /// Sent a new message to the channel.
-let broadcastMessage =
-  (
-    channel,
-    channelName: String,
-    name: String,
-    message: String,
-  ) => {
+let broadcastMessage = (
+  channel,
+  channelName: String,
+  name: String,
+  message: String,
+) => {
   // Save
   channel.lastMessages = List.append(channel.lastMessages, [(name, message)])
   // If too many last messages, drain

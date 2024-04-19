@@ -1,37 +1,37 @@
 module Client
 
-include "array"
-include "buffer"
-include "list"
-include "option"
-include "result"
-include "string"
-include "sys/process" as Ps
-include "sys/time"
+from "array" include Array
+from "buffer" include Buffer
+from "list" include List
+from "option" include Option
+from "result" include Result
+from "string" include String
+from "wasi/process" include Process as Ps
+from "wasi/time" include Time
 
-include "lunatic"
-from Lunatic use { Net, Process }
+from "lunatic" include Lunatic
+use Lunatic.{ module Net, module Process }
 
-include "./coordinator"
-include "./channel"
-include "./clientMessage"
-from ClientMessage use { clientMessageMailbox, type ClientMessage }
-include "./process" as ChatProcess
-include "./telnet"
-from Telnet use { type TelnetMessage }
-include "./termite"
-include "./termite/fmt"
+from "./coordinator.gr" include Coordinator
+from "./channel.gr" include Channel
+from "./clientMessage.gr" include ClientMessage
+use ClientMessage.{ clientMessageMailbox, type ClientMessage }
+from "./process.gr" include Process as ChatProcess
+from "./telnet.gr" include Telnet
+use Telnet.{ type TelnetMessage }
+from "./termite.gr" include Termite
+from "./termite/fmt.gr" include Fmt
 
-include "./ui/telnetBackend"
-from TelnetBackend use { WindowSize, type WindowSize }
-include "./ui/ui"
-from Ui use {
+from "./ui/telnetBackend.gr" include TelnetBackend
+use TelnetBackend.{ module WindowSize, type WindowSize }
+from "./ui/ui.gr" include Ui
+use Ui.{
   type ChannelContent,
-  Tab,
+  module Tab,
   type TabType,
-  Ui,
+  module Ui,
   type Ui,
-  UiTabs,
+  module UiTabs,
   type UiTabs,
 }
 
@@ -46,15 +46,16 @@ record Client {
   windowSize: WindowSize,
 }
 
-let _WELCOME = "
+let _WELCOME =
+  "
     Welcome to
 
-     __     __     ______     ______     __    __        __     ______    
-    /\ \  _ \ \   /\  __ \   /\  ___\   /\ \"-./  \      /\ \   /\  __ \   
-    \ \ \/ \".\ \  \ \  __ \  \ \___  \  \ \ \-./\ \     \ \ \  \ \ \/\ \  
-     \ \__/\".~\_\  \ \_\ \_\  \/\_____\  \ \_\ \ \_\     \ \_\  \ \_____\ 
-      \/_/   \/_/   \/_/\/_/   \/_____/   \/_/  \/_/      \/_/   \/_____/         
-  
+     __     __     ______     ______     __    __        __     ______
+    /\ \  _ \ \   /\  __ \   /\  ___\   /\ \"-./  \      /\ \   /\  __ \
+    \ \ \/ \".\ \  \ \  __ \  \ \___  \  \ \ \-./\ \     \ \ \  \ \ \/\ \
+     \ \__/\".~\_\  \ \_\ \_\  \/\_____\  \ \_\ \ \_\     \ \_\  \ \_____\
+      \/_/   \/_/   \/_/\/_/   \/_____/   \/_/  \/_/      \/_/   \/_____/
+
   INSTRUCTIONS:
 
   You will be navigating this interface using commands. Commands are
@@ -62,22 +63,23 @@ let _WELCOME = "
 
   Your starting name is {{ username }}."
 
-let _INSTRUCTIONS = "LICENSE:
+let _INSTRUCTIONS =
+  "LICENSE:
 
   MIT, Repository: https://github.com/ospencer/lunatic-chat-gr
-  
+
   PRIVACY:
-  
+
   No data is stored on the server. Only the last 10 messages per channel
   are kept in memory to bring new users up to date. Once the server shuts
   off all information is gone.
-  
+
   INSTRUCTIONS:
 
   To switch between tabs use the <TAB> key.
-  
+
   You can navigate through this server by using the following commands:
-  
+
   * /nick <username> - Change your username
   * /list            - Lists most popular #channels
   * /join <#channel> - Join a channel; creates one if it doesn't exist

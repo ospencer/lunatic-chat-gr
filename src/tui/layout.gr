@@ -1,17 +1,17 @@
 module Layout
 
-include "list"
-include "number"
-include "uint16"
-include "uint32"
+from "list" include List
+from "number" include Number
+from "uint16" include Uint16
+from "uint32" include Uint32
 
 let min = (x, y) => {
-  from Uint16 use { (<=) }
+  use Uint16.{ (<=) }
   if (x <= y) x else y
 }
 
 let max = (x, y) => {
-  from Uint16 use { (>=) }
+  use Uint16.{ (>=) }
   if (x >= y) x else y
 }
 
@@ -36,11 +36,11 @@ provide enum Constraint {
 }
 
 provide let applyConstraint = (constraint, length) => {
-  from Uint16 use { (*), (/), (<=) }
+  use Uint16.{ (*), (/), (<=) }
   match (constraint) {
     Percentage(p) => length * p / 100uS,
     Ratio(num, den) => {
-      from Uint32 use { (*), (/) }
+      use Uint32.{ (*), (/) }
       let r = num * Uint32.fromNumber(Uint16.toNumber(length)) / den
       Uint16.fromNumber(Uint32.toNumber(r))
     },
@@ -121,13 +121,13 @@ provide module Rect {
   provide let new = (x, y, width, height) => {
     let maxArea = 0xfffful
     let (clippedWidth, clippedHeight) = {
-      from Uint32 use { (*), (>) }
+      use Uint32.{ (*), (>) }
       if (
         Uint32.fromNumber(Uint16.toNumber(width)) *
-        Uint32.fromNumber(Uint16.toNumber(height)) >
+          Uint32.fromNumber(Uint16.toNumber(height)) >
         maxArea
       ) {
-        from Number use { (*), sqrt, floor }
+        use Number.{ (*), sqrt, floor }
         let aspectRatio = Uint16.toNumber(width) / Uint16.toNumber(height)
         let maxAreaF = Uint32.toNumber(maxArea)
         let heightF = sqrt(maxAreaF / aspectRatio)
@@ -140,7 +140,7 @@ provide module Rect {
     { x, y, width: clippedWidth, height: clippedHeight }
   }
 
-  from Uint16 use { (+), (-), (*), (<), (>) }
+  use Uint16.{ (+), (-), (*), (<), (>) }
 
   provide let area = rect => {
     rect.width * rect.height
@@ -206,7 +206,7 @@ provide module Rect {
 
 // TODO: use Cassowary solver
 provide let split = (layout, area) => {
-  from Uint16 use { (+), (*), (/) }
+  use Uint16.{ (+), (*), (/) }
 
   let destArea = Rect.inner(area, layout.margin)
   match (layout.direction) {
@@ -219,7 +219,7 @@ provide let split = (layout, area) => {
             let mut amount = destArea.height * p / 100uS
 
             if (i == numElements - 1) {
-              from Uint16 use { (-) }
+              use Uint16.{ (-) }
               // Add in any extra space to the last element
               amount += destArea.height - (areaUsed + amount)
             }
@@ -242,7 +242,7 @@ provide let split = (layout, area) => {
             let mut amount = destArea.width * p / 100uS
 
             if (i == numElements - 1) {
-              from Uint16 use { (-) }
+              use Uint16.{ (-) }
               // Add in any extra space to the last element
               amount += destArea.width - (areaUsed + amount)
             }

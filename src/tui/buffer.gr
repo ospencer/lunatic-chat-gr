@@ -1,18 +1,18 @@
 module Buffer
 
-include "array"
-include "char"
-include "list"
-include "number"
-include "string"
-include "uint16"
+from "array" include Array
+from "char" include Char
+from "list" include List
+from "number" include Number
+from "string" include String
+from "uint16" include Uint16
 
-include "./layout"
-from Layout use { Rect, type Rect }
-include "./style"
-from Style use { Modifier, type Color, type Modifier, type Style }
-include "./text"
-from Text use { type Span, type Spans }
+from "./layout.gr" include Layout
+use Layout.{ module Rect, type Rect }
+from "./style.gr" include Style
+use Style.{ module Modifier, type Color, type Modifier, type Style }
+from "./text.gr" include Text
+use Text.{ type Span, type Spans }
 
 provide record Cell {
   mut symbol: Char,
@@ -101,7 +101,7 @@ provide module Buffer {
   }
 
   provide let indexOf = (buffer, x, y) => {
-    from Uint16 use { (+), (-), (*), (<), (<=), (>), (>=) }
+    use Uint16.{ (+), (-), (*), (<), (<=), (>), (>=) }
     assert x >= Rect.left(buffer.area) &&
       x < Rect.right(buffer.area) &&
       y >= Rect.top(buffer.area) &&
@@ -115,13 +115,11 @@ provide module Buffer {
   provide let posOf = (buffer, i) => {
     assert i < Array.length(buffer.contents)
 
-    from Uint16 use { (+), (/), rem as (%) }
+    use Uint16.{ (+), (/), rem as (%) }
     let i = Uint16.fromNumber(i)
     (
-      buffer.area.x +
-        i % buffer.area.width,
-      buffer.area.y +
-        i / buffer.area.width,
+      buffer.area.x + i % buffer.area.width,
+      buffer.area.y + i / buffer.area.width,
     )
   }
 
@@ -142,13 +140,13 @@ provide module Buffer {
   }
 
   let saturatingAdd = (x, y) => {
-    from Uint16 use { (+), (<) }
+    use Uint16.{ (+), (<) }
     let sum = x + y
     if (sum < x) 0xffffuS else sum
   }
 
   let saturatingSub = (x, y) => {
-    from Uint16 use { (-), (>) }
+    use Uint16.{ (-), (>) }
     let diff = x - y
     if (diff > x) 0x0uS else diff
   }
@@ -221,7 +219,7 @@ provide module Buffer {
   }
 
   provide let setStyle = (buffer, area: Rect, style: Style) => {
-    from Uint16 use { (+), (<) }
+    use Uint16.{ (+), (<) }
 
     let top = Rect.top(area)
     let bottom = Rect.bottom(area)
@@ -269,7 +267,7 @@ provide module Buffer {
     for (let mut i = size - 1; i >= 0; i -= 1) {
       let (x, y) = posOf(buffer, i)
       // New index in contents
-      from Uint16 use { (+), (-), (*) }
+      use Uint16.{ (+), (-), (*) }
       let k = Uint16.toNumber((y - area.y) * area.width + x - area.x)
       if (i != k) {
         buffer.contents[k] = Cell.clone(buffer.contents[i])
@@ -283,7 +281,7 @@ provide module Buffer {
     for (let mut i = 0; i < size; i += 1) {
       let (x, y) = posOf(other, i)
       // New index in contents
-      from Uint16 use { (+), (-), (*) }
+      use Uint16.{ (+), (-), (*) }
       let k = Uint16.toNumber((y - area.y) * area.width + x - area.x)
       buffer.contents[k] = Cell.clone(other.contents[i])
     }
@@ -325,7 +323,7 @@ provide module Buffer {
 
     let mut updates = []
     let length = Uint16.fromNumber(Array.length(previousBuffer))
-    from Uint16 use { (+), (<), (/), rem as (%) }
+    use Uint16.{ (+), (<), (/), rem as (%) }
     for (let mut i = 0uS; i < length; i += 1uS) {
       let current = nextBuffer[Uint16.toNumber(i)]
       let previous = previousBuffer[Uint16.toNumber(i)]

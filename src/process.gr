@@ -1,8 +1,8 @@
 module Process
 
-include "lunatic"
+from "lunatic" include Lunatic
 
-from Lunatic use { Process }
+use Lunatic.{ module Process }
 
 provide type CoordinatorProcess = Process.Process
 provide type ClientProcess = Process.Process

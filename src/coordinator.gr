@@ -1,17 +1,17 @@
 module Coordinator
 
-include "set"
-include "list"
-include "map"
-include "option"
-include "result"
+from "set" include Set
+from "list" include List
+from "map" include Map
+from "option" include Option
+from "result" include Result
 
-include "lunatic"
-from Lunatic use { Process }
+from "lunatic" include Lunatic
+use Lunatic.{ module Process }
 
-include "./process" as ChatProcess
-include "./channel"
-from ChatProcess use {
+from "./process.gr" include Process as ChatProcess
+from "./channel.gr" include Channel
+use ChatProcess.{
   type ChannelProcess,
   type ClientProcess,
   type CoordinatorProcess,
@@ -112,9 +112,7 @@ let leaveChannel = (clientProcess, channel) => {
   }
   // If this was the last client, shut down the channel and remove it.
   if (left == 0) {
-    let channelProcess = Option.unwrap(
-      Map.get(channel, channels)
-    ).channelProcess
+    let channelProcess = Option.unwrap(Map.get(channel, channels)).channelProcess
     Channel.shutdown(channelProcess)
     Map.remove(channel, channels)
   }
@@ -141,8 +139,8 @@ let joinChannel = (client: ClientProcess, channel: String) => {
 let coordinatorInbox: Process.Mailbox<Message> = Process.createMailbox()
 let infoInbox: Process.Mailbox<Info> = Process.createMailbox()
 let channelInbox: Process.Mailbox<ChannelProcess> = Process.createMailbox()
-let channelsInbox: Process.Mailbox<List<(String, Number)>
-> = Process.createMailbox()
+let channelsInbox: Process.Mailbox<List<(String, Number)>> =
+  Process.createMailbox()
 
 provide let coordinate = () => {
   Process.dieWhenLinkDies(false)
@@ -203,17 +201,8 @@ provide let leaveServer = (coordinator: CoordinatorProcess, clientProcess) => {
   Process.send(coordinator, (LeaveServer, clientProcess), coordinatorInbox)
 }
 
-provide let changeName =
-  (
-    coordinator: CoordinatorProcess,
-    clientProcess,
-    name,
-  ) => {
-  Process.send(
-    coordinator,
-    (ChangeName(name), clientProcess),
-    coordinatorInbox
-  ) |>
+provide let changeName = (coordinator: CoordinatorProcess, clientProcess, name) => {
+  Process.send(coordinator, (ChangeName(name), clientProcess), coordinatorInbox) |>
     (_) => Process.receive(infoInbox)
 }
 
@@ -222,12 +211,11 @@ provide let listChannels = (coordinator: CoordinatorProcess, clientProcess) => {
     (_) => Process.receive(channelsInbox)
 }
 
-provide let joinChannel =
-  (
-    coordinator: CoordinatorProcess,
-    clientProcess,
-    channel,
-  ) => {
+provide let joinChannel = (
+  coordinator: CoordinatorProcess,
+  clientProcess,
+  channel,
+) => {
   Process.send(
     coordinator,
     (JoinChannel(channel), clientProcess),
@@ -236,12 +224,11 @@ provide let joinChannel =
     (_) => Process.receive(channelInbox)
 }
 
-provide let leaveChannel =
-  (
-    coordinator: CoordinatorProcess,
-    clientProcess,
-    channel,
-  ) => {
+provide let leaveChannel = (
+  coordinator: CoordinatorProcess,
+  clientProcess,
+  channel,
+) => {
   Process.send(
     coordinator,
     (LeaveChannel(channel), clientProcess),

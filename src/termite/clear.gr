@@ -1,6 +1,6 @@
 module Clear
 
-include "./fmt"
+from "./fmt.gr" include Fmt
 
 let createSequence = seq => {
   let seq = "\x1B[" ++ seq

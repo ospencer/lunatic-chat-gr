@@ -1,8 +1,8 @@
 module Cursor
 
-include "List"
+from "List" include List
 
-include "./fmt"
+from "./fmt.gr" include Fmt
 
 let createSequence = seq => {
   let seq = "\x1B[" ++ seq

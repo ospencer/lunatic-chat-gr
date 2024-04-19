@@ -1,16 +1,18 @@
 module Backend
 
-include "./buffer"
-include "./layout"
+from "./buffer.gr" include Buffer
+from "./layout.gr" include Layout
 
-provide record Backend {
-  draw: (Backend, List<(Uint16, Uint16, Buffer.Cell)>) -> Result<Void, Exception
+provide record rec Backend {
+  draw: (Backend, List<(Uint16, Uint16, Buffer.Cell)>) => Result<
+    Void,
+    Exception
   >,
-  hideCursor: Backend -> Result<Void, Exception>,
-  showCursor: Backend -> Result<Void, Exception>,
-  getCursor: Backend -> Result<(Uint16, Uint16), Exception>,
-  setCursor: (Backend, x: Uint16, y: Uint16) -> Result<Void, Exception>,
-  clear: Backend -> Result<Void, Exception>,
-  size: Backend -> Result<Layout.Rect, Exception>,
-  flush: Backend -> Result<Void, Exception>,
+  hideCursor: Backend => Result<Void, Exception>,
+  showCursor: Backend => Result<Void, Exception>,
+  getCursor: Backend => Result<(Uint16, Uint16), Exception>,
+  setCursor: (Backend, x: Uint16, y: Uint16) => Result<Void, Exception>,
+  clear: Backend => Result<Void, Exception>,
+  size: Backend => Result<Layout.Rect, Exception>,
+  flush: Backend => Result<Void, Exception>,
 }

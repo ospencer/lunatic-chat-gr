@@ -1,9 +1,9 @@
 module Termite
 
-include "./termite/clear"
-include "./termite/color"
-include "./termite/cursor"
-include "./termite/fmt"
-include "./termite/style"
+from "./termite/clear.gr" include Clear
+from "./termite/color.gr" include Color
+from "./termite/cursor.gr" include Cursor
+from "./termite/fmt.gr" include Fmt
+from "./termite/style.gr" include Style
 
-provide { Clear, Color, Cursor, Fmt, Style }
+provide { module Clear, module Color, module Cursor, module Fmt, module Style }
